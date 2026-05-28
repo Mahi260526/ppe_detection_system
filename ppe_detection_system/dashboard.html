@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Violations Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --accent: #00d4aa;
+      --muted: #8b98a5;
+      --danger: #f85149;
+      --warn: #d29922;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+    .header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .header .refresh {
+      background: var(--card);
+      color: var(--accent);
+      border: 1px solid var(--border);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .header .refresh:hover {
+      background: #252d3a;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .kpi .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.2;
+    }
+    .kpi .label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+    .kpi.danger .value { color: var(--danger); }
+    .kpi.warn .value { color: var(--warn); }
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #e6edf3;
+    }
+    .table-wrapper {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    thead {
+      background: #151b23;
+    }
+    th, td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tbody tr:hover {
+      background: #151b23;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      background: rgba(248, 81, 73, 0.16);
+      color: var(--danger);
+      margin-right: 0.35rem;
+    }
+    .badge.vest { background: rgba(210, 153, 34, 0.16); color: var(--warn); }
+    .badge.glasses { background: rgba(0, 212, 170, 0.16); color: var(--accent); }
+    .badge.mask { background: rgba(163, 113, 247, 0.2); color: #a371f7; }
+    .view-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--accent);
+      padding: 0.2rem 0.6rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .view-btn:hover {
+      background: #252d3a;
+    }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 3rem;
+    }
+    .loading {
+      text-align: center;
+      color: var(--muted);
+      padding: 2rem;
+    }
+    .charts {
+      margin-top: 2rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr);
+      gap: 1.5rem;
+    }
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem 1.5rem;
+    }
+    .chart-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #e6edf3;
+    }
+    canvas {
+      max-width: 100%;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 20, 25, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 900px;
+      width: 90%;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h3 {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    .modal-body {
+      padding: 0.5rem 1rem 1rem;
+    }
+    .modal-body img {
+      max-width: 100%;
+      max-height: 70vh;
+      display: block;
+      margin: 0 auto;
+      border-radius: 8px;
+    }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      align-items: flex-end;
+    }
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .filter-group label {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .filter-group input,
+    .filter-group select {
+      background: #151b23;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.35rem 0.6rem;
+      color: #e6edf3;
+      font-size: 0.85rem;
+      min-width: 140px;
+    }
+    .filter-group input:focus,
+    .filter-group select:focus {
+      outline: 1px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .user-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .user-bar .user-info {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .user-bar .user-info strong { color: var(--accent); }
+    .logout-btn {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.8rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-decoration: none;
+      color: var(--muted);
+    }
+    .logout-btn:hover { background: #252d3a; color: #e6edf3; }
+    .notifications-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .notifications-panel h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .notifications-panel .badge-count {
+      background: var(--danger);
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+    }
+    .notif-list {
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+    }
+    .notif-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
+    }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item.unread { font-weight: 500; }
+    .notif-item .submit-remarks-btn {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .notif-item .submit-remarks-btn:hover { filter: brightness(1.1); }
+    .notif-item .remarks-input {
+      width: 100%;
+      max-width: 220px;
+      background: #151b23;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.5rem;
+      color: #e6edf3;
+      font-size: 0.85rem;
+      margin-right: 0.35rem;
+    }
+    .notif-item .remarks-input::placeholder { color: var(--muted); }
+    .notif-item .remarks-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+    .notif-item.clickable { cursor: pointer; }
+    .notif-item.clickable:hover { background: #252d3a; }
+    .modal-review .section-label { font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-bottom: 0.35rem; }
+    .remarks-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .process-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .process-chip.unsafe_act { background: rgba(109, 63, 166, 0.22); color: #c9b2f5; border-color: rgba(109, 63, 166, 0.4); }
+    .process-chip.near_miss { background: rgba(84, 184, 220, 0.18); color: #91dbef; border-color: rgba(84, 184, 220, 0.4); }
+    .process-chip.minor_injury { background: rgba(154, 210, 91, 0.16); color: #d6f1ae; border-color: rgba(154, 210, 91, 0.35); }
+    .process-chip.lost_time_injury { background: rgba(242, 195, 45, 0.18); color: #ffe48a; border-color: rgba(242, 195, 45, 0.38); }
+    .process-chip.fatality { background: rgba(217, 61, 32, 0.18); color: #ffb7a6; border-color: rgba(217, 61, 32, 0.35); }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>PPE Violations Dashboard</h1>
+    <div class="user-bar">
+      <span class="user-info" id="userInfo">Loading…</span>
+      <a href="/camera-setup" class="logout-btn" id="cameraSetupLink" style="display: none;">Camera setup</a>
+      <a href="/logout" class="logout-btn">Logout</a>
+      <button class="refresh" onclick="load()">Refresh</button>
+    </div>
+  </header>
+  <main class="container">
+    <section class="notifications-panel" id="notificationsPanel">
+      <h3>Violations for your review <span class="badge-count" id="unreadBadge">0</span></h3>
+      <div class="notif-list" id="notifList">
+        <div class="loading">Loading…</div>
+      </div>
+    </section>
+    <section class="kpis" id="kpis">
+      <div class="kpi">
+        <div class="value" id="kpi-total">0</div>
+        <div class="label">Total Violations</div>
+      </div>
+      <div class="kpi danger">
+        <div class="value" id="kpi-no-helmet">0</div>
+        <div class="label">No Helmet</div>
+      </div>
+      <div class="kpi warn">
+        <div class="value" id="kpi-no-vest">0</div>
+        <div class="label">No Vest</div>
+      </div>
+      <div class="kpi">
+        <div class="value" id="kpi-no-glasses">0</div>
+        <div class="label">No Glasses</div>
+      </div>
+      <div class="kpi">
+        <div class="value" id="kpi-no-mask">0</div>
+        <div class="label">No Mask</div>
+      </div>
+    </section>
+    <section>
+      <h2 class="section-title">Process Safety KPIs</h2>
+      <section class="kpis" id="process-kpis">
+        <div class="kpi danger">
+          <div class="value" id="kpi-fatality">0</div>
+          <div class="label">Fatality</div>
+        </div>
+        <div class="kpi warn">
+          <div class="value" id="kpi-lti">0</div>
+          <div class="label">Lost Time Injuries</div>
+        </div>
+        <div class="kpi">
+          <div class="value" id="kpi-minor-injury">0</div>
+          <div class="label">Minor Injuries</div>
+        </div>
+        <div class="kpi">
+          <div class="value" id="kpi-near-miss">0</div>
+          <div class="label">Near Misses</div>
+        </div>
+        <div class="kpi">
+          <div class="value" id="kpi-unsafe-act">0</div>
+          <div class="label">Unsafe Acts</div>
+        </div>
+      </section>
+    </section>
+    <section>
+      <h2 class="section-title">Violations Table</h2>
+      <div class="filters">
+        <div class="filter-group">
+          <label for="filter-category">Category</label>
+          <select id="filter-category">
+            <option value="all">All</option>
+            <option value="no_helmet">No Helmet</option>
+            <option value="no_vest">No Vest</option>
+            <option value="no_glasses">No Glasses</option>
+            <option value="no_mask">No Mask</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filter-process-category">Process Category</label>
+          <select id="filter-process-category">
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filter-from">From Date</label>
+          <input type="date" id="filter-from">
+        </div>
+        <div class="filter-group">
+          <label for="filter-to">To Date</label>
+          <input type="date" id="filter-to">
+        </div>
+      </div>
+      <div class="table-wrapper" id="violations-container">
+        <div class="loading">Loading…</div>
+      </div>
+    </section>
+    <section class="charts">
+      <div class="chart-card">
+        <div class="chart-title">Category Ratio Over Time</div>
+        <canvas id="ratioChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Daily Violations by Category</div>
+        <canvas id="countChart"></canvas>
+      </div>
+    </section>
+  </main>
+  <div class="modal-backdrop" id="imageModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Violation</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img id="modalImage" src="" alt="Violation image">
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="clipModal">
+    <div class="modal modal-clip">
+      <div class="modal-header">
+        <h3 id="clipModalTitle">Violation clip</h3>
+        <button class="modal-close" onclick="closeClipModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <video id="clipVideo" controls preload="metadata" playsinline style="max-width:100%; max-height:70vh;"></video>
+        <p id="clipVideoError" class="muted" style="display:none; margin-top:0.5rem;">This clip could not be played in the browser. Use &quot;Download clip&quot; below to save and open in VLC or Windows Media Player.</p>
+        <p style="margin-top:0.75rem;">
+          <a id="clipDownloadLink" href="#" target="_blank" rel="noopener" class="view-btn" style="display:inline-block; text-decoration:none; padding:0.4rem 0.8rem;">Download clip</a>
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="reviewModal">
+    <div class="modal modal-review">
+      <div class="modal-header">
+        <h3 id="reviewModalTitle">Review violation</h3>
+        <button class="modal-close" onclick="closeReviewModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="section-label">Image</p>
+        <img id="reviewModalImage" src="" alt="Violation" style="max-width:100%; max-height:280px; border-radius:8px; border:1px solid var(--border);">
+        <p class="section-label" style="margin-top:1rem;">Clip</p>
+        <div id="reviewModalClipWrap">
+          <video id="reviewModalClip" controls preload="metadata" playsinline style="max-width:100%; max-height:240px; border-radius:8px;"></video>
+          <p id="reviewModalNoClip" class="muted" style="display:none;">No clip available.</p>
+        </div>
+        <p class="section-label" style="margin-top:1rem;">Process Safety Category</p>
+        <select id="reviewModalProcessCategory" style="width:100%; max-width:100%; box-sizing:border-box; background:#151b23; border:1px solid var(--border); border-radius:8px; padding:0.5rem; color:#e6edf3; font-size:0.9rem;">
+          <option value="unsafe_act">Unsafe Act</option>
+          <option value="near_miss">Near Miss</option>
+          <option value="minor_injury">Minor Injury</option>
+          <option value="lost_time_injury">Lost Time Injury</option>
+          <option value="fatality">Fatality</option>
+        </select>
+        <p id="reviewModalProcessCategoryError" class="muted" style="color:var(--danger); display:none; margin-top:0.25rem;">Process safety category is required.</p>
+        <p class="section-label" style="margin-top:1rem;">Remarks (required)</p>
+        <textarea id="reviewModalRemarks" placeholder="Enter your remarks..." rows="3" style="width:100%; max-width:100%; box-sizing:border-box; background:#151b23; border:1px solid var(--border); border-radius:8px; padding:0.5rem; color:#e6edf3; font-size:0.9rem;"></textarea>
+        <p id="reviewModalRemarksError" class="muted" style="color:var(--danger); display:none; margin-top:0.25rem;">Remarks are required.</p>
+        <p style="margin-top:1rem;">
+          <button type="button" class="submit-remarks-btn" id="reviewModalSubmitBtn" style="padding:0.5rem 1rem;">Submit remarks</button>
+        </p>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const API = "";
+    let ratioChart = null;
+    let countChart = null;
+    let allViolations = [];
+    let processCategoryChoices = [
+      { id: "unsafe_act", label: "Unsafe Act" },
+      { id: "near_miss", label: "Near Miss" },
+      { id: "minor_injury", label: "Minor Injury" },
+      { id: "lost_time_injury", label: "Lost Time Injury" },
+      { id: "fatality", label: "Fatality" },
+    ];
+
+    function processCategoryLabel(value) {
+      const normalized = String(value || "unsafe_act").trim().toLowerCase();
+      const match = processCategoryChoices.find(item => item.id === normalized);
+      return match ? match.label : "Unsafe Act";
+    }
+
+    function renderProcessCategoryOptions() {
+      const filterEl = document.getElementById("filter-process-category");
+      const reviewEl = document.getElementById("reviewModalProcessCategory");
+      if (filterEl) {
+        const current = filterEl.value || "all";
+        filterEl.innerHTML = `<option value="all">All</option>` + processCategoryChoices
+          .map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
+          .join("");
+        filterEl.value = processCategoryChoices.some(item => item.id === current) ? current : "all";
+      }
+      if (reviewEl) {
+        const current = reviewEl.value || "unsafe_act";
+        reviewEl.innerHTML = processCategoryChoices
+          .map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
+          .join("");
+        reviewEl.value = processCategoryChoices.some(item => item.id === current) ? current : "unsafe_act";
+      }
+    }
+
+    function setKpis(data) {
+      document.getElementById("kpi-total").textContent = data.total ?? 0;
+      document.getElementById("kpi-no-helmet").textContent = data.no_helmet ?? 0;
+      document.getElementById("kpi-no-vest").textContent = data.no_vest ?? 0;
+      document.getElementById("kpi-no-glasses").textContent = data.no_glasses ?? 0;
+      document.getElementById("kpi-no-mask").textContent = data.no_mask ?? 0;
+      const triangle = data.process_triangle || {};
+      document.getElementById("kpi-fatality").textContent = triangle.fatality ?? 0;
+      document.getElementById("kpi-lti").textContent = triangle.lost_time_injury ?? 0;
+      document.getElementById("kpi-minor-injury").textContent = triangle.minor_injury ?? 0;
+      document.getElementById("kpi-near-miss").textContent = triangle.near_miss ?? 0;
+      document.getElementById("kpi-unsafe-act").textContent = triangle.unsafe_act ?? 0;
+    }
+    function openModal(src, title) {
+      const backdrop = document.getElementById("imageModal");
+      const img = document.getElementById("modalImage");
+      const titleEl = document.getElementById("modalTitle");
+      img.src = src;
+      titleEl.textContent = title;
+      backdrop.style.display = "flex";
+    }
+    function closeModal() {
+      const backdrop = document.getElementById("imageModal");
+      const img = document.getElementById("modalImage");
+      img.src = "";
+      backdrop.style.display = "none";
+    }
+    document.getElementById("imageModal").addEventListener("click", (e) => {
+      if (e.target.id === "imageModal") {
+        closeModal();
+      }
+    });
+    function openClipModal(src, title) {
+      const backdrop = document.getElementById("clipModal");
+      const video = document.getElementById("clipVideo");
+      const titleEl = document.getElementById("clipModalTitle");
+      const errEl = document.getElementById("clipVideoError");
+      const downloadLink = document.getElementById("clipDownloadLink");
+      errEl.style.display = "none";
+      video.style.display = "block";
+      video.src = src;
+      downloadLink.href = src;
+      downloadLink.download = (src.split("/").pop() || "violation_clip.mp4").split("?")[0];
+      titleEl.textContent = title || "Violation clip";
+      backdrop.style.display = "flex";
+      video.play().catch(() => {});
+    }
+    function closeClipModal() {
+      const backdrop = document.getElementById("clipModal");
+      const video = document.getElementById("clipVideo");
+      const errEl = document.getElementById("clipVideoError");
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      errEl.style.display = "none";
+      backdrop.style.display = "none";
+    }
+    document.getElementById("clipVideo").addEventListener("error", function() {
+      document.getElementById("clipVideoError").style.display = "block";
+    });
+    document.getElementById("clipModal").addEventListener("click", (e) => {
+      if (e.target.id === "clipModal") {
+        closeClipModal();
+      }
+    });
+    document.getElementById("violations-container").addEventListener("click", (e) => {
+      const btn = e.target.closest(".view-clip-btn");
+      if (btn) {
+        openClipModal(btn.getAttribute("data-clip-url"), btn.getAttribute("data-clip-title"));
+      }
+    });
+
+    function applyFilters() {
+      const cat = document.getElementById("filter-category").value;
+      const processCategory = document.getElementById("filter-process-category").value;
+      const from = document.getElementById("filter-from").value;
+      const to = document.getElementById("filter-to").value;
+      return allViolations.filter(v => {
+        // Category filter
+        if (cat === "no_helmet" && !v.no_helmet) return false;
+        if (cat === "no_vest" && !v.no_vest) return false;
+        if (cat === "no_glasses" && !v.no_glasses) return false;
+        if (cat === "no_mask" && !v.no_mask) return false;
+        if (processCategory !== "all" && (v.process_category || "unsafe_act") !== processCategory) return false;
+        // Date filter (based on YYYY-MM-DD at start of datetime)
+        if (from || to) {
+          if (!v.datetime) return false;
+          const d = String(v.datetime).split(" ")[0]; // YYYY-MM-DD
+          if (from && d < from) return false;
+          if (to && d > to) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderTable(list) {
+      const container = document.getElementById("violations-container");
+      if (!list || list.length === 0) {
+        container.innerHTML = '<div class="empty">No violations recorded yet. Run the PPE detection app to capture violations.</div>';
+        return;
+      }
+      let rows = "";
+      list.forEach((v, idx) => {
+        const vid = v.id ? ("#" + escapeHtml(String(v.id))) : "#VID" + String(list.length - idx).padStart(3, "0");
+        const tags = [];
+        if (v.no_helmet) tags.push('<span class="badge">No Helmet</span>');
+        if (v.no_vest) tags.push('<span class="badge vest">No Vest</span>');
+        if (v.no_glasses) tags.push('<span class="badge glasses">No Glasses</span>');
+        if (v.no_mask) tags.push('<span class="badge mask">No Mask</span>');
+        const imgUrl = "/violations/" + encodeURIComponent(v.image);
+        const location = (v.location || "").trim() ? escapeHtml(v.location) : "—";
+        const clipUrl = (v.clip && v.clip.trim()) ? "/violations/" + encodeURIComponent(v.clip) : "";
+        const processCategory = v.process_category || "unsafe_act";
+        const processChip = `<span class="process-chip ${escapeHtml(processCategory)}">${escapeHtml(v.process_category_label || processCategoryLabel(processCategory))}</span>`;
+        const clipTitle = vid + " — " + (v.datetime || "");
+        const viewClipBtn = clipUrl
+          ? `<button class="view-btn view-clip-btn" data-clip-url="${escapeHtml(clipUrl)}" data-clip-title="${escapeHtml(clipTitle)}" type="button">View clip</button>`
+          : "<span class=\"muted\">—</span>";
+        const viewImgBtn = `<button class="view-btn" onclick="openModal('${imgUrl}', '${escapeHtml(clipTitle)}')">View</button>`;
+        const remarksText = (v.user_remarks || "").trim();
+        const remarksDisplay = remarksText ? escapeHtml(remarksText.length > 60 ? remarksText.slice(0, 60) + "…" : remarksText) : "—";
+        const remarksTitle = remarksText ? escapeHtml(remarksText) : "";
+        rows += `
+          <tr>
+            <td>${vid}</td>
+            <td>${escapeHtml(v.datetime)}</td>
+            <td>${location}</td>
+            <td>${tags.join(" ") || '<span class="badge">Violation</span>'}</td>
+            <td>${processChip}</td>
+            <td>${viewImgBtn}</td>
+            <td>${viewClipBtn}</td>
+            <td class="remarks-cell" title="${remarksTitle}">${remarksDisplay}</td>
+          </tr>
+        `;
+      });
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Date &amp; Time</th>
+              <th>Location</th>
+              <th>Category</th>
+              <th>Process Category</th>
+              <th>Image</th>
+              <th>Clip</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function buildCharts(list) {
+      const byDate = {};
+      (list || []).forEach(v => {
+        if (!v.datetime) return;
+        const date = String(v.datetime).split(" ")[0];
+        if (!byDate[date]) {
+          byDate[date] = { no_helmet: 0, no_vest: 0, no_glasses: 0, no_mask: 0 };
+        }
+        if (v.no_helmet) byDate[date].no_helmet += 1;
+        if (v.no_vest) byDate[date].no_vest += 1;
+        if (v.no_glasses) byDate[date].no_glasses += 1;
+        if (v.no_mask) byDate[date].no_mask += 1;
+      });
+      const dates = Object.keys(byDate).sort();
+      const nhCounts = dates.map(d => byDate[d].no_helmet);
+      const nvCounts = dates.map(d => byDate[d].no_vest);
+      const ngCounts = dates.map(d => byDate[d].no_glasses);
+      const nmCounts = dates.map(d => byDate[d].no_mask);
+
+      // Ratios per date
+      const nhRatios = [];
+      const nvRatios = [];
+      const ngRatios = [];
+      const nmRatios = [];
+      dates.forEach((d, i) => {
+        const total = nhCounts[i] + nvCounts[i] + ngCounts[i] + nmCounts[i];
+        if (total === 0) {
+          nhRatios.push(0);
+          nvRatios.push(0);
+          ngRatios.push(0);
+          nmRatios.push(0);
+        } else {
+          nhRatios.push(nhCounts[i] / total);
+          nvRatios.push(nvCounts[i] / total);
+          ngRatios.push(ngCounts[i] / total);
+          nmRatios.push(nmCounts[i] / total);
+        }
+      });
+
+      const ratioCtx = document.getElementById("ratioChart").getContext("2d");
+      const countCtx = document.getElementById("countChart").getContext("2d");
+
+      if (ratioChart) ratioChart.destroy();
+      if (countChart) countChart.destroy();
+
+      ratioChart = new Chart(ratioCtx, {
+        type: "line",
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: "No Helmet",
+              data: nhRatios,
+              borderColor: "#f85149",
+              backgroundColor: "rgba(248, 81, 73, 0.2)",
+              tension: 0.25,
+            },
+            {
+              label: "No Vest",
+              data: nvRatios,
+              borderColor: "#d29922",
+              backgroundColor: "rgba(210, 153, 34, 0.2)",
+              tension: 0.25,
+            },
+            {
+              label: "No Glasses",
+              data: ngRatios,
+              borderColor: "#00d4aa",
+              backgroundColor: "rgba(0, 212, 170, 0.2)",
+              tension: 0.25,
+            },
+            {
+              label: "No Mask",
+              data: nmRatios,
+              borderColor: "#a371f7",
+              backgroundColor: "rgba(163, 113, 247, 0.2)",
+              tension: 0.25,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: "#e6edf3" } },
+            tooltip: {
+              callbacks: {
+                label: ctx => `${ctx.dataset.label}: ${(ctx.parsed.y * 100).toFixed(1)}%`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#8b98a5" },
+              grid: { color: "#20252d" },
+            },
+            y: {
+              ticks: {
+                color: "#8b98a5",
+                callback: v => `${(v * 100).toFixed(0)}%`,
+              },
+              grid: { color: "#20252d" },
+              min: 0,
+              max: 1,
+            },
+          },
+        },
+      });
+
+      countChart = new Chart(countCtx, {
+        type: "bar",
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: "No Helmet",
+              data: nhCounts,
+              backgroundColor: "rgba(248, 81, 73, 0.7)",
+            },
+            {
+              label: "No Vest",
+              data: nvCounts,
+              backgroundColor: "rgba(210, 153, 34, 0.7)",
+            },
+            {
+              label: "No Glasses",
+              data: ngCounts,
+              backgroundColor: "rgba(0, 212, 170, 0.7)",
+            },
+            {
+              label: "No Mask",
+              data: nmCounts,
+              backgroundColor: "rgba(163, 113, 247, 0.7)",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: "#e6edf3" } },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#8b98a5" },
+              grid: { color: "#20252d" },
+              stacked: false,
+            },
+            y: {
+              ticks: { color: "#8b98a5" },
+              grid: { color: "#20252d" },
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+    async function loadUser() {
+      const res = await fetch(API + "/api/me", { credentials: "same-origin" });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return null;
+      }
+      const user = await res.json();
+      const el = document.getElementById("userInfo");
+      const role = (user.role || "viewer").toLowerCase();
+      const locs = user.locations && user.locations.length ? user.locations.join(", ") : (role === "admin" ? "All locations" : "—");
+      el.textContent = "";
+      el.appendChild(document.createTextNode("Logged in as "));
+      const strong = document.createElement("strong");
+      strong.textContent = user.username || "User";
+      el.appendChild(strong);
+      el.appendChild(document.createTextNode(" (" + role + ") — " + locs));
+      const setupLink = document.getElementById("cameraSetupLink");
+      if (setupLink) setupLink.style.display = (role === "admin") ? "inline-block" : "none";
+      return user;
+    }
+
+    function renderNotifications(list, unreadCount) {
+      const container = document.getElementById("notifList");
+      const unreadOnly = (list || []).filter(v => !v.read);
+      document.getElementById("unreadBadge").textContent = unreadCount ?? 0;
+      if (unreadOnly.length === 0) {
+        container.innerHTML = '<div class="empty">No violations for review. Click a violation below to add remarks.</div>';
+        return;
+      }
+      let html = "";
+      unreadOnly.forEach((v) => {
+        const tags = [];
+        if (v.no_helmet) tags.push("No Helmet");
+        if (v.no_vest) tags.push("No Vest");
+        if (v.no_glasses) tags.push("No Glasses");
+        if (v.no_mask) tags.push("No Mask");
+        const vid = v.id ? ("#" + String(v.id)) : "#VID—";
+        const label = (v.datetime || "") + " — " + (tags.length ? tags.join(", ") : "Violation") + (v.location ? " @ " + v.location : "");
+        const imgEsc = (v.image || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const imgUrl = "/violations/" + encodeURIComponent(v.image || "");
+        const clipUrl = (v.clip && v.clip.trim()) ? "/violations/" + encodeURIComponent(v.clip) : "";
+        html += `<div class="notif-item unread clickable" data-image="${imgEsc}" data-image-url="${escapeHtml(imgUrl)}" data-clip-url="${escapeHtml(clipUrl)}" data-datetime="${escapeHtml(v.datetime || "")}" data-id="${escapeHtml(vid)}" title="Click to review">${escapeHtml((v.datetime || "").slice(0, 16))} ${(v.location || "").slice(0, 12)} — ${escapeHtml(vid)} ${tags.slice(0, 2).join(", ")}</div>`;
+      });
+      container.innerHTML = html;
+      container.querySelectorAll(".notif-item.clickable").forEach(el => {
+        el.onclick = () => {
+          openReviewModal({
+            image: el.getAttribute("data-image"),
+            imageUrl: el.getAttribute("data-image-url"),
+            clipUrl: el.getAttribute("data-clip-url") || "",
+            datetime: el.getAttribute("data-datetime") || "",
+            id: el.getAttribute("data-id") || "",
+          });
+        };
+      });
+    }
+
+    let currentReviewViolation = null;
+    function openReviewModal(v) {
+      currentReviewViolation = v;
+      const modal = document.getElementById("reviewModal");
+      const matchedViolation = allViolations.find(item => (item.image || "") === (v.image || ""));
+      document.getElementById("reviewModalTitle").textContent = "Review violation " + (v.id || "");
+      document.getElementById("reviewModalImage").src = v.imageUrl || "";
+      const clipEl = document.getElementById("reviewModalClip");
+      const noClipEl = document.getElementById("reviewModalNoClip");
+      if (v.clipUrl) {
+        clipEl.style.display = "block";
+        noClipEl.style.display = "none";
+        clipEl.src = v.clipUrl;
+      } else {
+        clipEl.style.display = "none";
+        clipEl.removeAttribute("src");
+        noClipEl.style.display = "block";
+      }
+      document.getElementById("reviewModalProcessCategory").value = (matchedViolation && matchedViolation.process_category) || v.processCategory || "unsafe_act";
+      document.getElementById("reviewModalProcessCategoryError").style.display = "none";
+      document.getElementById("reviewModalProcessCategory").style.borderColor = "";
+      document.getElementById("reviewModalRemarks").value = "";
+      document.getElementById("reviewModalRemarksError").style.display = "none";
+      document.getElementById("reviewModalRemarks").style.borderColor = "";
+      modal.style.display = "flex";
+    }
+    function closeReviewModal() {
+      currentReviewViolation = null;
+      document.getElementById("reviewModal").style.display = "none";
+      document.getElementById("reviewModalImage").removeAttribute("src");
+      document.getElementById("reviewModalClip").removeAttribute("src");
+      document.getElementById("reviewModalClip").pause();
+    }
+    document.getElementById("reviewModalSubmitBtn").onclick = function() {
+      const remarks = (document.getElementById("reviewModalRemarks").value || "").trim();
+      const processCategory = (document.getElementById("reviewModalProcessCategory").value || "").trim();
+      const errEl = document.getElementById("reviewModalRemarksError");
+      const inputEl = document.getElementById("reviewModalRemarks");
+      const processErrEl = document.getElementById("reviewModalProcessCategoryError");
+      const processInputEl = document.getElementById("reviewModalProcessCategory");
+      if (!remarks) {
+        errEl.style.display = "block";
+        inputEl.style.borderColor = "var(--danger)";
+        return;
+      }
+      if (!processCategory) {
+        processErrEl.style.display = "block";
+        processInputEl.style.borderColor = "var(--danger)";
+        return;
+      }
+      errEl.style.display = "none";
+      inputEl.style.borderColor = "";
+      processErrEl.style.display = "none";
+      processInputEl.style.borderColor = "";
+      if (!currentReviewViolation || !currentReviewViolation.image) return;
+      submitRemarks(currentReviewViolation.image, remarks, processCategory);
+      closeReviewModal();
+    };
+    document.getElementById("reviewModal").addEventListener("click", function(e) {
+      if (e.target.id === "reviewModal") closeReviewModal();
+    });
+
+    async function submitRemarks(imageBasename, remarks, processCategory) {
+      try {
+        const res = await fetch(API + "/api/notifications/submit_remarks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ image: imageBasename, remarks: remarks, process_category: processCategory }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok && (data.error || "").toLowerCase().includes("remarks")) {
+          alert("Remarks are required.");
+          return;
+        }
+        if (!res.ok && (data.error || "").toLowerCase().includes("process")) {
+          alert("Process safety category is required.");
+          return;
+        }
+        await load();
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadNotifications() {
+      try {
+        const res = await fetch(API + "/api/notifications", { credentials: "same-origin" });
+        if (res.status === 401) { window.location.href = "/login"; return; }
+        const data = await res.json();
+        renderNotifications(data.violations || [], data.unread_count ?? 0);
+      } catch (e) {
+        document.getElementById("notifList").innerHTML = "<div class='empty'>Could not load notifications.</div>";
+      }
+    }
+
+    async function load() {
+      try {
+        const user = await loadUser();
+        if (!user) return;
+        const [kpiRes, violationsRes, processCategoryRes] = await Promise.all([
+          fetch(API + "/api/kpis", { credentials: "same-origin" }),
+          fetch(API + "/api/violations", { credentials: "same-origin" }),
+          fetch(API + "/api/process-categories", { credentials: "same-origin" }),
+        ]);
+        if (kpiRes.status === 401 || violationsRes.status === 401 || processCategoryRes.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        const kpis = await kpiRes.json();
+        const violations = await violationsRes.json();
+        if (processCategoryRes.ok) {
+          const categories = await processCategoryRes.json();
+          if (Array.isArray(categories) && categories.length) {
+            processCategoryChoices = categories;
+          }
+        }
+        renderProcessCategoryOptions();
+        allViolations = violations || [];
+        setKpis(kpis);
+        const filtered = applyFilters();
+        renderTable(filtered);
+        buildCharts(filtered);
+        loadNotifications();
+      } catch (e) {
+        document.getElementById("violations-container").innerHTML =
+          '<div class="empty">Could not load data. Is the dashboard server running? (python server.py)</div>';
+        console.error(e);
+      }
+    }
+    // Reapply filters client-side when filter inputs change
+    ["filter-category", "filter-process-category", "filter-from", "filter-to"].forEach(id => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", () => {
+          const filtered = applyFilters();
+          renderTable(filtered);
+          buildCharts(filtered);
+        });
+      });
+    });
+
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Camera Setup — PPE Monitoring</title>
+  <style>
+    :root { --bg: #0f1419; --card: #1a2332; --accent: #00d4aa; --muted: #8b98a5; --danger: #f85149; --warn: #d29922; --border: #30363d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: #e6edf3; min-height: 100vh; }
+    .header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    .header h1 { margin: 0; font-size: 1.35rem; font-weight: 600; color: var(--accent); }
+    .nav-links { display: flex; gap: 0.75rem; align-items: center; }
+    .nav-links a { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+    .nav-links a:hover { text-decoration: underline; }
+    .btn { background: var(--card); color: var(--accent); border: 1px solid var(--border); padding: 0.45rem 0.9rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; text-decoration: none; display: inline-block; }
+    .btn:hover { background: #252d3a; }
+    .btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+    .btn-danger { color: var(--danger); border-color: var(--danger); }
+    .btn-danger:hover { background: rgba(248,81,73,0.15); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 2rem; }
+    .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; color: #e6edf3; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; }
+    tr:hover { background: #151b23; }
+    .form-row { margin-bottom: 0.75rem; }
+    .form-row label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .form-row input, .form-row select { width: 100%; max-width: 320px; background: #151b23; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.65rem; color: #e6edf3; font-size: 0.9rem; }
+    .bounds-inputs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .bounds-inputs input { max-width: 70px; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(15,20,25,0.9); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; max-width: 440px; width: 90%; }
+    .modal h3 { margin: 0 0 1rem 0; font-size: 1rem; }
+    .modal-close { float: right; background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; line-height: 1; }
+    .areas-block { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+    .area-row { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    .area-row:last-child { border-bottom: none; }
+    .empty { color: var(--muted); padding: 1rem; text-align: center; font-size: 0.9rem; }
+    .rule-badge { font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 6px; background: rgba(0,212,170,0.2); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>Camera Setup</h1>
+    <div class="nav-links">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/logout" class="btn">Logout</a>
+    </div>
+  </header>
+  <main class="container">
+    <h2 class="section-title">Cameras &amp; area-wise policies</h2>
+    <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem;">Define cameras and, for each camera, define areas and what type of violation is generated in that area (PPE, person detected, person out of lane, vehicle detected).</p>
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <span class="section-title" style="margin: 0;">Cameras</span>
+        <button type="button" class="btn btn-primary" id="addCameraBtn">+ Add camera</button>
+      </div>
+      <div id="camerasList">
+        <div class="empty">Loading…</div>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal-backdrop" id="cameraModal">
+    <div class="modal">
+      <button type="button" class="modal-close" id="closeCameraModal">&times;</button>
+      <h3 id="cameraModalTitle">Add camera</h3>
+      <input type="hidden" id="cameraId" value="">
+      <div class="form-row">
+        <label>Name</label>
+        <input type="text" id="cameraName" placeholder="e.g. Gate Camera">
+      </div>
+      <div class="form-row">
+        <label>Source (camera index 0, 1, 2… or URL)</label>
+        <input type="text" id="cameraSource" placeholder="0 or http://...">
+      </div>
+      <div class="form-row">
+        <label>Location name</label>
+        <input type="text" id="cameraLocation" placeholder="e.g. Main Gate">
+      </div>
+      <p style="margin-top: 1rem;">
+        <button type="button" class="btn btn-primary" id="saveCameraBtn">Save</button>
+      </p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="areasListModal">
+    <div class="modal" style="max-width: 560px;">
+      <button type="button" class="modal-close" id="closeAreasListModal">&times;</button>
+      <h3 id="areasListModalTitle">Areas</h3>
+      <p style="margin: 0 0 0.75rem 0;"><button type="button" class="btn btn-primary" id="addAreaFromListBtn">+ Add area</button></p>
+      <div id="areasListContent">
+        <div class="empty">No areas.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="areaModal">
+    <div class="modal">
+      <button type="button" class="modal-close" id="closeAreaModal">&times;</button>
+      <h3 id="areaModalTitle">Add area</h3>
+      <input type="hidden" id="areaId" value="">
+      <input type="hidden" id="areaCameraId" value="">
+      <div class="form-row">
+        <label>Area name</label>
+        <input type="text" id="areaName" placeholder="e.g. Zone A">
+      </div>
+      <div class="form-row">
+        <label>Bounds (0–100% of frame: x1, y1, x2, y2)</label>
+        <div class="bounds-inputs">
+          <input type="number" id="areaX1" min="0" max="100" value="0" placeholder="x1%">
+          <input type="number" id="areaY1" min="0" max="100" value="0" placeholder="y1%">
+          <input type="number" id="areaX2" min="0" max="100" value="100" placeholder="x2%">
+          <input type="number" id="areaY2" min="0" max="100" value="100" placeholder="y2%">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Violation rule</label>
+        <select id="areaRule">
+          <option value="ppe">PPE violation (no helmet, vest, etc.)</option>
+          <option value="person_detected">Person detected (any person = violation)</option>
+          <option value="person_out_of_lane">Person out of lane</option>
+          <option value="vehicle_detected">Vehicle detected</option>
+        </select>
+      </div>
+      <p style="margin-top: 1rem;">
+        <button type="button" class="btn btn-primary" id="saveAreaBtn">Save</button>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const API = "";
+    let cameras = [];
+    let ruleTypes = [];
+    let areasByCamera = {};
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function loadRuleTypes() {
+      const res = await fetch(API + "/api/camera-policies/rule-types", { credentials: "same-origin" });
+      if (res.ok) ruleTypes = await res.json();
+    }
+
+    async function loadCameras() {
+      const res = await fetch(API + "/api/camera-policies/cameras", { credentials: "same-origin" });
+      if (res.status === 401) { window.location.href = "/login"; return; }
+      if (res.status === 403) { window.location.href = "/dashboard"; return; }
+      cameras = res.ok ? await res.json() : [];
+      for (const c of cameras) {
+        const aRes = await fetch(API + "/api/camera-policies/cameras/" + encodeURIComponent(c.id) + "/areas", { credentials: "same-origin" });
+        areasByCamera[c.id] = aRes.ok ? await aRes.json() : [];
+      }
+      renderCameras();
+    }
+
+    function renderCameras() {
+      const el = document.getElementById("camerasList");
+      if (!cameras.length) {
+        el.innerHTML = '<div class="empty">No cameras. Click "Add camera" to create one.</div>';
+        return;
+      }
+      let html = '<table><thead><tr><th>Name</th><th>Source</th><th>Location</th><th>Areas</th><th></th></tr></thead><tbody>';
+      cameras.forEach(c => {
+        const areas = areasByCamera[c.id] || [];
+        const areasSummary = areas.length ? areas.map(a => a.name + " (" + a.rule + ")").join(", ") : "—";
+        html += `<tr>
+          <td>${esc(c.name)}</td>
+          <td>${esc(String(c.source))}</td>
+          <td>${esc(c.location_name || "—")}</td>
+          <td style="max-width:280px; font-size:0.85rem;">${areas.length} area(s)</td>
+          <td>
+            <button type="button" class="btn" onclick="openAreasListModal('${esc(c.id)}', '${esc(c.name)}')">Manage areas</button>
+            <button type="button" class="btn" onclick="editCamera('${esc(c.id)}')">Edit</button>
+            <button type="button" class="btn btn-danger" onclick="deleteCamera('${esc(c.id)}', '${esc(c.name)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+      html += "</tbody></table>";
+      el.innerHTML = html;
+    }
+
+    function openCameraModal(editId) {
+      document.getElementById("cameraId").value = editId || "";
+      document.getElementById("cameraModalTitle").textContent = editId ? "Edit camera" : "Add camera";
+      if (editId) {
+        const c = cameras.find(x => x.id === editId);
+        document.getElementById("cameraName").value = c ? c.name : "";
+        document.getElementById("cameraSource").value = c ? String(c.source) : "0";
+        document.getElementById("cameraLocation").value = c ? (c.location_name || "") : "";
+      } else {
+        document.getElementById("cameraName").value = "";
+        document.getElementById("cameraSource").value = "0";
+        document.getElementById("cameraLocation").value = "";
+      }
+      document.getElementById("cameraModal").style.display = "flex";
+    }
+
+    function editCamera(id) {
+      openCameraModal(id);
+    }
+
+    async function saveCamera() {
+      const id = document.getElementById("cameraId").value.trim();
+      const name = document.getElementById("cameraName").value.trim();
+      let source = document.getElementById("cameraSource").value.trim();
+      if (source === "" || /^\d+$/.test(source)) source = source ? parseInt(source, 10) : 0;
+      const location_name = document.getElementById("cameraLocation").value.trim();
+      const res = await fetch(API + "/api/camera-policies/cameras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ id: id || undefined, name, source, location_name }),
+      });
+      if (!res.ok) { alert("Failed to save camera"); return; }
+      document.getElementById("cameraModal").style.display = "none";
+      loadCameras();
+    }
+
+    async function deleteCamera(id, name) {
+      if (!confirm("Delete camera \"" + name + "\" and all its areas?")) return;
+      await fetch(API + "/api/camera-policies/cameras/" + encodeURIComponent(id), { method: "DELETE", credentials: "same-origin" });
+      loadCameras();
+    }
+
+    let currentAreasCameraId = "";
+    let currentAreasCameraName = "";
+    function openAreasListModal(cameraId, cameraName) {
+      currentAreasCameraId = cameraId;
+      currentAreasCameraName = cameraName;
+      document.getElementById("areasListModalTitle").textContent = "Areas — " + cameraName;
+      const areas = areasByCamera[cameraId] || [];
+      const content = document.getElementById("areasListContent");
+      if (!areas.length) {
+        content.innerHTML = '<div class="empty">No areas. Click "Add area" to define an area and its violation rule.</div>';
+      } else {
+        let html = "";
+        areas.forEach(a => {
+          const b = a.bounds || [0,0,1,1];
+          const boundsStr = [b[0],b[1],b[2],b[3]].map(x => Math.round(x*100)).join("%, ");
+          html += `<div class="area-row">
+            <span><strong>${esc(a.name)}</strong> — ${esc(a.rule)} (${boundsStr}%)</span>
+            <span>
+              <button type="button" class="btn" onclick="openEditAreaById('${esc(cameraId)}', '${esc(cameraName)}', '${esc(a.id)}'); document.getElementById('areasListModal').style.display='none'">Edit</button>
+              <button type="button" class="btn btn-danger" onclick="deleteArea('${esc(a.id)}'); document.getElementById('areasListModal').style.display='none'">Delete</button>
+            </span>
+          </div>`;
+        });
+        content.innerHTML = html;
+      }
+      document.getElementById("areasListModal").style.display = "flex";
+    }
+
+    function openAreaModal(cameraId, cameraName) {
+      document.getElementById("areaCameraId").value = cameraId;
+      document.getElementById("areaId").value = "";
+      document.getElementById("areaModalTitle").textContent = "Add area — " + cameraName;
+      document.getElementById("areaName").value = "";
+      document.getElementById("areaX1").value = "0";
+      document.getElementById("areaY1").value = "0";
+      document.getElementById("areaX2").value = "100";
+      document.getElementById("areaY2").value = "100";
+      document.getElementById("areaRule").value = "ppe";
+      document.getElementById("areaModal").style.display = "flex";
+    }
+
+    function openEditAreaById(cameraId, cameraName, areaId) {
+      const areas = areasByCamera[cameraId] || [];
+      const area = areas.find(x => x.id === areaId);
+      if (!area) return;
+      document.getElementById("areaCameraId").value = cameraId;
+      document.getElementById("areaId").value = area.id;
+      document.getElementById("areaModalTitle").textContent = "Edit area — " + cameraName;
+      document.getElementById("areaName").value = area.name || "";
+      const b = area.bounds || [0, 0, 1, 1];
+      document.getElementById("areaX1").value = Math.round((b[0] || 0) * 100);
+      document.getElementById("areaY1").value = Math.round((b[1] || 0) * 100);
+      document.getElementById("areaX2").value = Math.round((b[2] || 1) * 100);
+      document.getElementById("areaY2").value = Math.round((b[3] || 1) * 100);
+      document.getElementById("areaRule").value = area.rule || "ppe";
+      document.getElementById("areaModal").style.display = "flex";
+    }
+
+    async function saveArea() {
+      const areaId = document.getElementById("areaId").value.trim();
+      const cameraId = document.getElementById("areaCameraId").value.trim();
+      const name = document.getElementById("areaName").value.trim();
+      const x1 = parseInt(document.getElementById("areaX1").value, 10) / 100;
+      const y1 = parseInt(document.getElementById("areaY1").value, 10) / 100;
+      const x2 = parseInt(document.getElementById("areaX2").value, 10) / 100;
+      const y2 = parseInt(document.getElementById("areaY2").value, 10) / 100;
+      const bounds = [x1, y1, x2, y2];
+      const rule = document.getElementById("areaRule").value || "ppe";
+      const res = await fetch(API + "/api/camera-policies/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ id: areaId || undefined, camera_id: cameraId, name, bounds, rule }),
+      });
+      if (!res.ok) { alert("Failed to save area"); return; }
+      document.getElementById("areaModal").style.display = "none";
+      await loadCameras();
+      if (currentAreasCameraId) openAreasListModal(currentAreasCameraId, currentAreasCameraName);
+    }
+
+    async function deleteArea(areaId) {
+      if (!confirm("Delete this area?")) return;
+      await fetch(API + "/api/camera-policies/areas/" + encodeURIComponent(areaId), { method: "DELETE", credentials: "same-origin" });
+      loadCameras();
+    }
+
+    document.getElementById("addCameraBtn").onclick = () => openCameraModal();
+    document.getElementById("closeCameraModal").onclick = () => { document.getElementById("cameraModal").style.display = "none"; };
+    document.getElementById("saveCameraBtn").onclick = saveCamera;
+    document.getElementById("addAreaFromListBtn").onclick = () => {
+      document.getElementById("areasListModal").style.display = "none";
+      openAreaModal(currentAreasCameraId, currentAreasCameraName);
+    };
+    document.getElementById("closeAreasListModal").onclick = () => { document.getElementById("areasListModal").style.display = "none"; };
+    document.getElementById("closeAreaModal").onclick = () => { document.getElementById("areaModal").style.display = "none"; };
+    document.getElementById("saveAreaBtn").onclick = saveArea;
+    document.getElementById("cameraModal").onclick = (e) => { if (e.target.id === "cameraModal") e.target.style.display = "none"; };
+    document.getElementById("areaModal").onclick = (e) => { if (e.target.id === "areaModal") e.target.style.display = "none"; };
+    document.getElementById("areasListModal").onclick = (e) => { if (e.target.id === "areasListModal") e.target.style.display = "none"; };
+
+    loadRuleTypes().then(() => loadCameras());
+  </script>
+</body>
+</html>

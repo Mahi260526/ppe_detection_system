@@ -1,0 +1,9 @@
+
+ultralytics>=8.0.196
+opencv-python
+numpy
+torch>=2.0.0
+requests
+flask
+huggingface_hub
+python-dotenv
