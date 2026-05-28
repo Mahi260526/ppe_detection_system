@@ -2,13 +2,36 @@
 # - Integer: camera index (0 = default webcam, 1 = first USB, etc.)
 # - URL string: IP/CCTV stream e.g. "http://192.168.1.214:4747/mjpegfeed"
 # - File path: recorded footage e.g. "recorded_footage.mp4" or "videos/camera_recording.mp4"
-VIDEO_SOURCE = r"C:\Users\Mahi Agrawal\Downloads\sample_video2.mp4"  # recorded video file (place your .mp4/.avi in project folder or use full path)
+VIDEO_SOURCE = r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4"  # recorded video file (place your .mp4/.avi in project folder or use full path)
 # Location name for this camera/source (used for filtering by user-assigned locations)
 LOCATION_NAME = "Main Gate"
 
 # Lowering this helps catch more misses (esp. helmet) but can increase noise.
 # Keep it modest on CPU, and rely on the confirmation logic in app.py.
 CONFIDENCE_THRESHOLD = 0.35
+
+# Accuracy tuning (CPU-friendly)
+# - Per-class minimum confidence: ignore weak/noisy "no_*" detections.
+# - Multi-frame confirmation: violation must persist across a few frames (reduces flicker).
+
+# Minimum confidence to treat a detection as a "person" for gating/tracking logic.
+PERSON_MIN_CONFIDENCE = 0.35
+
+# Minimum confidence to accept each violation label from the model.
+NO_HELMET_MIN_CONFIDENCE = 0.45
+NO_VEST_MIN_CONFIDENCE = 0.45
+NO_MASK_MIN_CONFIDENCE = 0.45
+NO_GLASSES_MIN_CONFIDENCE = 0.45
+
+# Multi-frame confirmation (N-of-M frames)
+HELMET_CONFIRM_WINDOW_FRAMES = 5
+HELMET_CONFIRM_REQUIRED_FRAMES = 3
+VEST_CONFIRM_WINDOW_FRAMES = 5
+VEST_CONFIRM_REQUIRED_FRAMES = 3
+MASK_CONFIRM_WINDOW_FRAMES = 5
+MASK_CONFIRM_REQUIRED_FRAMES = 3
+GLASSES_CONFIRM_WINDOW_FRAMES = 5
+GLASSES_CONFIRM_REQUIRED_FRAMES = 3
 
 
 # Hardhat validation:

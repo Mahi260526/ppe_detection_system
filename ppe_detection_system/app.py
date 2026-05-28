@@ -67,6 +67,19 @@ from ultralytics import YOLO
 from config import (
     VIDEO_SOURCE,
     CONFIDENCE_THRESHOLD,
+    PERSON_MIN_CONFIDENCE,
+    NO_HELMET_MIN_CONFIDENCE,
+    NO_VEST_MIN_CONFIDENCE,
+    NO_MASK_MIN_CONFIDENCE,
+    NO_GLASSES_MIN_CONFIDENCE,
+    HELMET_CONFIRM_WINDOW_FRAMES,
+    HELMET_CONFIRM_REQUIRED_FRAMES,
+    VEST_CONFIRM_WINDOW_FRAMES,
+    VEST_CONFIRM_REQUIRED_FRAMES,
+    MASK_CONFIRM_WINDOW_FRAMES,
+    MASK_CONFIRM_REQUIRED_FRAMES,
+    GLASSES_CONFIRM_WINDOW_FRAMES,
+    GLASSES_CONFIRM_REQUIRED_FRAMES,
     ENABLE_HELMET_COLOR_HEURISTIC,
     HARDHAT_MIN_CONFIDENCE,
     HARDHAT_HEAD_REGION_RATIO,
@@ -88,6 +101,8 @@ import os
 import time
 import queue
 import threading
+import ctypes
+from collections import deque
 import numpy as np
 from datetime import datetime
 import requests
@@ -107,6 +122,28 @@ def check_opencv_gui():
         return True
     except cv2.error:
         return False
+
+
+def _get_screen_size():
+    """Return primary screen size as (width, height), or None when unavailable."""
+    try:
+        user32 = ctypes.windll.user32
+        return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+    except Exception:
+        return None
+
+
+def _resize_for_display(frame, max_w, max_h):
+    """Resize frame to fit inside max_w x max_h while preserving aspect ratio."""
+    h, w = frame.shape[:2]
+    if w <= 0 or h <= 0:
+        return frame
+    scale = min(max_w / float(w), max_h / float(h), 1.0)
+    if scale >= 1.0:
+        return frame
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+    return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 def save_frame(frame, frame_count, output_dir="output_frames"):
     """Save frame to file as fallback when GUI is not available"""
@@ -282,6 +319,8 @@ def draw_runtime_notes(frame, notes):
 def frame_has_person(results):
     """Return True only if at least one detection is a person/human. Ignore frames with only machinery, cones, etc."""
     for detection in extract_detections(results):
+        if detection["confidence"] < PERSON_MIN_CONFIDENCE:
+            continue
         if any(kw in detection["label"] for kw in PERSON_CLASS_KEYWORDS):
             return True
     return False
@@ -295,16 +334,21 @@ def get_violation_types_from_results(results, frame=None):
         return no_helmet, no_vest, no_glasses, no_mask, runtime_notes
     for detection in detections:
         label = detection["label"]
+        conf = detection["confidence"]
         for key, keywords in VIOLATION_CLASS_MAP.items():
             if any(kw in label for kw in keywords):
                 if key == "no_helmet":
-                    no_helmet = True
+                    if conf >= NO_HELMET_MIN_CONFIDENCE:
+                        no_helmet = True
                 elif key == "no_vest":
-                    no_vest = True
+                    if conf >= NO_VEST_MIN_CONFIDENCE:
+                        no_vest = True
                 elif key == "no_glasses":
-                    no_glasses = True
+                    if conf >= NO_GLASSES_MIN_CONFIDENCE:
+                        no_glasses = True
                 elif key == "no_mask":
-                    no_mask = True
+                    if conf >= NO_MASK_MIN_CONFIDENCE:
+                        no_mask = True
     # Fallback: infer from first class name if no match yet
     if not (no_helmet or no_vest or no_glasses or no_mask):
         first_name = detections[0]["label"]
@@ -324,7 +368,7 @@ def get_violation_types_from_results(results, frame=None):
     if frame is not None and not no_helmet:
         person_detections = [
             d for d in detections
-            if any(kw in d["label"] for kw in PERSON_CLASS_KEYWORDS)
+            if d["confidence"] >= PERSON_MIN_CONFIDENCE and any(kw in d["label"] for kw in PERSON_CLASS_KEYWORDS)
         ]
         hardhat_detections = [d for d in detections if _is_positive_hardhat_label(d["label"])]
         suspicious_persons = sum(
@@ -697,6 +741,7 @@ def main():
         print("Press Ctrl+C to stop processing.\n")
     else:
         print("GUI available. Press Q or Esc in the video window to quit.\n")
+        cv2.namedWindow("PPE Detection System", cv2.WINDOW_NORMAL)
 
     # Initialize video capture
     print(f"\n{'='*60}")
@@ -749,6 +794,10 @@ def main():
     clip_buffer_max = CLIP_PRE_SEC * CLIP_FPS
     last_clip_frame_time = 0
     clip_post_state = {"queue": None, "end_time": 0}  # shared with main loop and violation block
+    helmet_history = deque(maxlen=max(1, int(HELMET_CONFIRM_WINDOW_FRAMES)))
+    vest_history = deque(maxlen=max(1, int(VEST_CONFIRM_WINDOW_FRAMES)))
+    mask_history = deque(maxlen=max(1, int(MASK_CONFIRM_WINDOW_FRAMES)))
+    glasses_history = deque(maxlen=max(1, int(GLASSES_CONFIRM_WINDOW_FRAMES)))
 
     try:
         while not stop_requested:
@@ -881,7 +930,17 @@ def main():
                 # Draw quit hint on frame (top-left)
                 cv2.putText(annotated_frame, "Press Q or Esc to quit", (10, 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.imshow("PPE Detection System", annotated_frame)
+                display_frame = annotated_frame
+                screen_size = _get_screen_size()
+                if screen_size:
+                    screen_w, screen_h = screen_size
+                    # Keep margins so taskbar/title bar do not crop the video.
+                    display_frame = _resize_for_display(
+                        annotated_frame,
+                        max_w=max(320, screen_w - 120),
+                        max_h=max(240, screen_h - 180),
+                    )
+                cv2.imshow("PPE Detection System", display_frame)
                 key = cv2.waitKey(wait_ms)
                 if key != -1:
                     key = key & 0xFF
