@@ -36,14 +36,14 @@ def require_admin():
 @app.route("/")
 def index():
     if session.get("user"):
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard_v2"))
     return redirect(url_for("login_page"))
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
     if request.method == "GET":
         if session.get("user"):
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("dashboard_v2"))
         return send_from_directory(BASE_DIR, "login.html")
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
@@ -53,7 +53,7 @@ def login_page():
     if not user:
         return redirect(url_for("login_page") + "?error=invalid")
     session["user"] = user
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard_v2"))
 
 @app.route("/logout")
 def logout():
@@ -66,13 +66,36 @@ def dashboard():
         return redirect(url_for("login_page"))
     return send_from_directory(BASE_DIR, "dashboard.html")
 
+
+
+    
+#dashboard-v2
+
+
+
+
+
+
+@app.route("/dashboard-v2")
+def dashboard_v2():
+    if not session.get("user"):
+        return redirect(url_for("login_page"))
+    return send_from_directory(BASE_DIR, "ppe.html")
+
+
+
+
+
+
+
+
 @app.route("/camera-setup")
 def camera_setup_page():
     if not session.get("user"):
         return redirect(url_for("login_page"))
     err, code = require_admin()
     if err is not None:
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard_v2"))
     return send_from_directory(BASE_DIR, "camera_setup.html")
 
 @app.route("/api/me")

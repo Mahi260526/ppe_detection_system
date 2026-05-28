@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --bg-panel: #121a26;
+      --bg-panel-2: #1a2332;
+      --line: #2a3647;
+      --text: #e6edf3;
+      --muted: #95a4b7;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 250px 1fr;
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, #0c1320 0%, #0f1623 100%);
+      padding: 1rem 0.75rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .brand {
+      padding: 0.6rem 0.8rem 1rem;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 0.8rem;
+    }
+    .brand h1 { margin: 0; font-size: 1.08rem; }
+    .brand p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.8rem; }
+    .menu-btn {
+      width: 100%;
+      display: block;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #c5d3e6;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      padding: 0.58rem 0.75rem;
+      margin-bottom: 0.3rem;
+      cursor: pointer;
+    }
+    .menu-btn:hover { background: #172233; }
+    .menu-btn.active {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.3);
+      color: #fff;
+    }
+    .menu-link {
+      width: 100%;
+      display: block;
+      text-decoration: none;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #c5d3e6;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      padding: 0.58rem 0.75rem;
+      margin-bottom: 0.3rem;
+    }
+    .menu-link:hover {
+      background: #172233;
+      color: #fff;
+    }
+    .main {
+      padding: 1.2rem 1.35rem;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .title h2 { margin: 0; font-size: 1.35rem; }
+    .title p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.86rem; }
+    .btn {
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.42rem 0.85rem;
+      font-size: 0.84rem;
+      cursor: pointer;
+    }
+    .btn:hover { background: #1b2737; }
+    .section {
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.7rem;
+      margin-bottom: 1rem;
+    }
+    .kpi {
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.8rem 0.9rem;
+    }
+    .kpi .k-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 0.25rem;
+    }
+    .kpi .k-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+    .section h3 {
+      margin: 0 0 0.8rem;
+      font-size: 1rem;
+    }
+    .grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    .camera-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg-panel-2);
+    }
+    .camera-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+      padding: 0.5rem 0.7rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 0.35rem;
+      background: var(--muted);
+    }
+    .dot.live { background: var(--success); }
+    .dot.offline { background: var(--danger); }
+    .camera-shot {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      display: block;
+      background: #0a1018;
+    }
+    .camera-video {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      display: block;
+      background: #0a1018;
+    }
+    .camera-foot {
+      padding: 0.5rem 0.7rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    th, td {
+      padding: 0.55rem 0.45rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+    }
+    .click-id {
+      color: #93c5fd;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .table-scroll { overflow: auto; }
+    .view-link {
+      color: #bfdbfe;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.16rem 0.5rem;
+      font-size: 0.74rem;
+      display: inline-block;
+    }
+    .view-link:hover { background: #1b2737; }
+    .chart-wrap {
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.14rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      margin-right: 0.25rem;
+      border: 1px solid transparent;
+    }
+    .b-helmet { background: rgba(239, 68, 68, 0.15); color: #fecaca; border-color: rgba(239, 68, 68, 0.35); }
+    .b-vest { background: rgba(245, 158, 11, 0.16); color: #fde68a; border-color: rgba(245, 158, 11, 0.35); }
+    .b-glasses { background: rgba(34, 197, 94, 0.15); color: #bbf7d0; border-color: rgba(34, 197, 94, 0.35); }
+    .b-mask { background: rgba(99, 102, 241, 0.15); color: #c7d2fe; border-color: rgba(99, 102, 241, 0.35); }
+    .snapshots {
+      display: grid;
+      gap: 0.6rem;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+    .snapshot {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg-panel-2);
+    }
+    .snapshot img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      display: block;
+    }
+    .snapshot video {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      display: block;
+      background: #0a1018;
+    }
+    .snapshot-meta {
+      padding: 0.45rem 0.55rem;
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+    .hidden { display: none !important; }
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 1.2rem;
+      font-size: 0.88rem;
+    }
+    .sos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.6rem;
+    }
+    .sos-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.7rem;
+      background: var(--bg-panel-2);
+      font-size: 0.84rem;
+    }
+    .sos-card h4 { margin: 0 0 0.4rem; font-size: 0.9rem; }
+    .sos-link {
+      display: inline-block;
+      margin-top: 0.45rem;
+      color: #bfdbfe;
+      text-decoration: none;
+    }
+    .sos-link:hover { text-decoration: underline; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>SafeBuild Dashboard</h1>
+        <p>PPE Monitoring Console</p>
+      </div>
+      <a class="menu-link" href="/camera-setup">1) Camera Setup</a>
+      <button class="menu-btn" data-view="all-cameras">2) All Cameras</button>
+      <button class="menu-btn active" data-view="dashboard-2">Dashboard 2 (Home)</button>
+      <button class="menu-btn" data-view="safety-checks">3) Safety Checks</button>
+      <button class="menu-btn" data-view="help-support">4) Help &amp; Support</button>
+      <a class="menu-link" href="/logout">5) Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="title">
+          <h2 id="pageTitle">Dashboard 2</h2>
+          <p id="whoami">Loading user...</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+          <button id="refreshBtn" class="btn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <section id="view-dashboard-2">
+        <div class="kpis">
+          <article class="kpi"><div class="k-label">Total Violations</div><div class="k-value" id="k-total">0</div></article>
+          <article class="kpi"><div class="k-label">No Helmet</div><div class="k-value" id="k-helmet" style="color:#fecaca;">0</div></article>
+          <article class="kpi"><div class="k-label">No Vest</div><div class="k-value" id="k-vest" style="color:#fde68a;">0</div></article>
+          <article class="kpi"><div class="k-label">No Glasses</div><div class="k-value" id="k-glasses" style="color:#bbf7d0;">0</div></article>
+          <article class="kpi"><div class="k-label">No Mask</div><div class="k-value" id="k-mask" style="color:#c7d2fe;">0</div></article>
+        </div>
+        <div class="section">
+          <h3>Violation Table</h3>
+          <div id="violationTableWrap">
+            <div class="empty">Loading violations...</div>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <h3 style="margin-top:0;">Violation Trend (single graph)</h3>
+          <canvas id="violationChart"></canvas>
+          <div id="chartStatus" class="empty hidden" style="padding-top:0.7rem;"></div>
+        </div>
+      </section>
+
+      <section id="view-all-cameras" class="hidden">
+        <div class="section">
+          <h3>Live Cameras</h3>
+          <div id="liveCameraGrid" class="grid">
+            <div class="empty">Loading cameras...</div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>All camera list</h3>
+          <div id="cameraTableWrap">
+            <div class="empty">Loading camera list...</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-camera-detail" class="hidden">
+        <div class="section">
+          <h3 id="cameraDetailTitle">Camera Detail</h3>
+          <div id="cameraViolationsWrap" class="empty">Loading violations...</div>
+        </div>
+        <div class="section">
+          <h3>Snapshots (date + time + violation)</h3>
+          <div id="cameraSnapshots" class="snapshots">
+            <div class="empty">No snapshots for this camera yet.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-safety-checks" class="hidden">
+        <div class="section">
+          <h3>Safety Checks: what happens on violation</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Violation</th>
+                <th>Immediate Action</th>
+                <th>Likely Causes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>No Helmet</td>
+                <td>Raise alert, capture snapshot + clip, notify supervisor</td>
+                <td>Missing PPE issue, heat discomfort, poor supervision</td>
+              </tr>
+              <tr>
+                <td>No Vest</td>
+                <td>Raise alert, check visibility zones, log non-compliance</td>
+                <td>Shift change, unavailable vest size, worker negligence</td>
+              </tr>
+              <tr>
+                <td>No Mask</td>
+                <td>Raise alert, enforce respiratory PPE in dusty areas</td>
+                <td>Low awareness, discomfort, stock shortage</td>
+              </tr>
+              <tr>
+                <td>No Glasses</td>
+                <td>Raise alert, inspect eye-risk task zones</td>
+                <td>Improper fit, fogging complaints, weak compliance</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-help-support" class="hidden">
+        <div class="section">
+          <h3>Help &amp; Support (SOS)</h3>
+          <div class="sos-grid">
+            <div class="sos-card">
+              <h4>Emergency Supervisor</h4>
+              <div>Primary response for PPE incident escalation.</div>
+              <a class="sos-link" href="tel:+911234567890">Call SOS: +91 12345 67890</a>
+            </div>
+            <div class="sos-card">
+              <h4>Site Control Room</h4>
+              <div>For camera outage, false alarms, and urgent intervention.</div>
+              <a class="sos-link" href="tel:+919876543210">Call Control: +91 98765 43210</a>
+            </div>
+            <div class="sos-card">
+              <h4>Email Support</h4>
+              <div>For dashboard issues or account access support.</div>
+              <a class="sos-link" href="mailto:support@safebuild.local">support@safebuild.local</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const API = "";
+    let cameras = [];
+    let violations = [];
+    let currentCameraId = "";
+    let violationChart = null;
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s == null ? "" : String(s);
+      return d.innerHTML;
+    }
+
+    function violationBadges(v) {
+      const tags = [];
+      if (v.no_helmet) tags.push('<span class="badge b-helmet">No Helmet</span>');
+      if (v.no_vest) tags.push('<span class="badge b-vest">No Vest</span>');
+      if (v.no_glasses) tags.push('<span class="badge b-glasses">No Glasses</span>');
+      if (v.no_mask) tags.push('<span class="badge b-mask">No Mask</span>');
+      return tags.join(" ") || '<span class="badge b-helmet">Violation</span>';
+    }
+
+    function byCamera(camera) {
+      const location = (camera.location_name || "").trim();
+      return violations.filter(v => (v.location || "").trim() === location);
+    }
+
+    function activeStatus(camera) {
+      const list = byCamera(camera);
+      if (!list.length) return { label: "Not Live", cls: "offline" };
+      return { label: "Live", cls: "live" };
+    }
+
+    function cameraCardMediaHtml(v) {
+      if (v && v.clip) {
+        const clipUrl = "/violations/" + encodeURIComponent(v.clip);
+        return `<video class="camera-video" src="${clipUrl}" muted loop autoplay playsinline preload="metadata"></video>`;
+      }
+      if (v && v.image) {
+        const imgUrl = "/violations/" + encodeURIComponent(v.image);
+        return `<img class="camera-shot" src="${imgUrl}" alt="Camera view">`;
+      }
+      const fallback = "data:image/svg+xml;utf8," + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#0a1018"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#70839e" font-family="Segoe UI" font-size="28">No Snapshot</text></svg>'
+      );
+      return `<img class="camera-shot" src="${fallback}" alt="No media">`;
+    }
+
+    function renderLiveGrid() {
+      const el = document.getElementById("liveCameraGrid");
+      if (!cameras.length) {
+        el.innerHTML = '<div class="empty">No cameras configured. Go to Camera Setup.</div>';
+        return;
+      }
+      el.innerHTML = cameras.map((c, idx) => {
+        const list = byCamera(c);
+        const latest = list[0];
+        const status = activeStatus(c);
+        const mediaHtml = cameraCardMediaHtml(latest);
+        return `
+          <article class="camera-card">
+            <div class="camera-head">
+              <span><strong>ID:</strong> ${esc(c.id || ("cam_" + (idx + 1)))}</span>
+              <span>${esc(c.location_name || "—")}</span>
+            </div>
+            ${mediaHtml}
+            <div class="camera-foot">
+              <span><span class="dot ${status.cls}"></span>${status.label}</span>
+              <span>${latest ? esc(latest.datetime || "") : "No recent events"}</span>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderCameraTable() {
+      const el = document.getElementById("cameraTableWrap");
+      if (!cameras.length) {
+        el.innerHTML = '<div class="empty">No cameras configured.</div>';
+        return;
+      }
+      const rows = cameras.map((c, idx) => {
+        const list = byCamera(c);
+        const status = activeStatus(c);
+        return `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><span class="click-id" data-cam-id="${esc(c.id || "")}">${esc(c.id || ("cam_" + (idx + 1)))}</span></td>
+            <td>${esc(c.name || "Camera")}</td>
+            <td>${esc(c.location_name || "—")}</td>
+            <td><span class="dot ${status.cls}"></span>${status.label}</td>
+            <td>${list.length}</td>
+            <td>${list.length}</td>
+          </tr>
+        `;
+      }).join("");
+      el.innerHTML = `
+        <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Camera No</th><th>Camera ID</th><th>Name</th><th>Location</th><th>Status</th><th>Violations</th><th>Snapshots</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+      `;
+      el.querySelectorAll(".click-id").forEach(node => {
+        node.addEventListener("click", () => openCameraDetail(node.getAttribute("data-cam-id")));
+      });
+    }
+
+    function renderViolationTable() {
+      const el = document.getElementById("violationTableWrap");
+      if (!violations.length) {
+        el.innerHTML = '<div class="empty">No violations found yet.</div>';
+        return;
+      }
+      const rows = violations.map((v, i) => `
+        <tr>
+          <td>#${String(i + 1).padStart(3, "0")}</td>
+          <td>${esc(v.datetime || "—")}</td>
+          <td>${esc(v.location || "—")}</td>
+          <td>${violationBadges(v)}</td>
+          <td>${v.image ? `<a class="view-link" target="_blank" href="/violations/${encodeURIComponent(v.image)}">View</a>` : "—"}</td>
+          <td>${v.clip ? `<a class="view-link" target="_blank" href="/violations/${encodeURIComponent(v.clip)}">View Clip</a>` : "—"}</td>
+        </tr>
+      `).join("");
+      el.innerHTML = `
+        <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Date & Time</th><th>Location</th><th>Violation</th><th>Image</th><th>Clip</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+      `;
+    }
+
+    function renderDashboardKpis() {
+      const total = violations.length;
+      let noHelmet = 0, noVest = 0, noGlasses = 0, noMask = 0;
+      violations.forEach(v => {
+        if (v.no_helmet) noHelmet += 1;
+        if (v.no_vest) noVest += 1;
+        if (v.no_glasses) noGlasses += 1;
+        if (v.no_mask) noMask += 1;
+      });
+      document.getElementById("k-total").textContent = total;
+      document.getElementById("k-helmet").textContent = noHelmet;
+      document.getElementById("k-vest").textContent = noVest;
+      document.getElementById("k-glasses").textContent = noGlasses;
+      document.getElementById("k-mask").textContent = noMask;
+    }
+
+    function buildViolationChart() {
+      const statusEl = document.getElementById("chartStatus");
+      if (statusEl) {
+        statusEl.textContent = "";
+        statusEl.classList.add("hidden");
+      }
+      if (!window.Chart) {
+        if (statusEl) {
+          statusEl.textContent = "Chart library unavailable (Chart.js not loaded).";
+          statusEl.classList.remove("hidden");
+        }
+        return;
+      }
+      const byDate = {};
+      violations.forEach(v => {
+        const d = String(v.datetime || "").split(" ")[0];
+        if (!d) return;
+        if (!byDate[d]) byDate[d] = { no_helmet: 0, no_vest: 0, no_glasses: 0, no_mask: 0 };
+        if (v.no_helmet) byDate[d].no_helmet += 1;
+        if (v.no_vest) byDate[d].no_vest += 1;
+        if (v.no_glasses) byDate[d].no_glasses += 1;
+        if (v.no_mask) byDate[d].no_mask += 1;
+      });
+      const labels = Object.keys(byDate).sort();
+      const nh = labels.map(d => byDate[d].no_helmet);
+      const nv = labels.map(d => byDate[d].no_vest);
+      const ng = labels.map(d => byDate[d].no_glasses);
+      const nm = labels.map(d => byDate[d].no_mask);
+      const totals = labels.map((_, i) => nh[i] + nv[i] + ng[i] + nm[i]);
+      const toPct = (arr) => arr.map((v, i) => totals[i] > 0 ? (v * 100.0) / totals[i] : 0);
+      const nhPct = toPct(nh);
+      const nvPct = toPct(nv);
+      const ngPct = toPct(ng);
+      const nmPct = toPct(nm);
+
+      const canvas = document.getElementById("violationChart");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (violationChart) violationChart.destroy();
+      try {
+        violationChart = new Chart(ctx, {
+          data: {
+            labels,
+            datasets: [
+              { type: "bar", label: "No Helmet Count", data: nh, yAxisID: "yCount", backgroundColor: "rgba(239,68,68,0.58)", borderRadius: 4 },
+              { type: "bar", label: "No Vest Count", data: nv, yAxisID: "yCount", backgroundColor: "rgba(245,158,11,0.56)", borderRadius: 4 },
+              { type: "bar", label: "No Glasses Count", data: ng, yAxisID: "yCount", backgroundColor: "rgba(34,197,94,0.56)", borderRadius: 4 },
+              { type: "bar", label: "No Mask Count", data: nm, yAxisID: "yCount", backgroundColor: "rgba(99,102,241,0.56)", borderRadius: 4 },
+              { type: "line", label: "No Helmet %", data: nhPct, yAxisID: "yPct", borderColor: "#fecaca", backgroundColor: "rgba(254,202,202,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
+              { type: "line", label: "No Vest %", data: nvPct, yAxisID: "yPct", borderColor: "#fde68a", backgroundColor: "rgba(253,230,138,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
+              { type: "line", label: "No Glasses %", data: ngPct, yAxisID: "yPct", borderColor: "#bbf7d0", backgroundColor: "rgba(187,247,208,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
+              { type: "line", label: "No Mask %", data: nmPct, yAxisID: "yPct", borderColor: "#c7d2fe", backgroundColor: "rgba(199,210,254,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
+            ],
+          },
+          options: {
+            responsive: true,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: { labels: { color: "#e6edf3", boxWidth: 14 } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const label = ctx.dataset.label || "";
+                    const val = Number(ctx.parsed.y || 0);
+                    return ctx.dataset.yAxisID === "yPct"
+                      ? `${label}: ${val.toFixed(1)}%`
+                      : `${label}: ${val}`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: "#95a4b7" }, grid: { color: "#2a3647" } },
+              yCount: {
+                position: "left",
+                ticks: { color: "#95a4b7" },
+                grid: { color: "#2a3647" },
+                beginAtZero: true,
+                title: { display: true, text: "Counts", color: "#95a4b7" },
+              },
+              yPct: {
+                position: "right",
+                ticks: {
+                  color: "#95a4b7",
+                  callback: (v) => `${Number(v).toFixed(0)}%`,
+                },
+                grid: { drawOnChartArea: false },
+                min: 0,
+                max: 100,
+                title: { display: true, text: "Ratio %", color: "#95a4b7" },
+              },
+            },
+          },
+        });
+      } catch (err) {
+        console.error("chart build error:", err);
+        if (statusEl) {
+          statusEl.textContent = "Could not load graph.";
+          statusEl.classList.remove("hidden");
+        }
+      }
+    }
+
+    function openCameraDetail(camId) {
+      const camera = cameras.find(c => String(c.id) === String(camId));
+      if (!camera) return;
+      currentCameraId = camId;
+      const list = byCamera(camera);
+      document.getElementById("cameraDetailTitle").textContent = `Camera ${camera.id} — ${camera.location_name || "Unknown location"}`;
+
+      const vioWrap = document.getElementById("cameraViolationsWrap");
+      if (!list.length) {
+        vioWrap.innerHTML = '<div class="empty">No violations found for this camera/location.</div>';
+      } else {
+        const rows = list.map((v, i) => `
+          <tr>
+            <td>#${String(i + 1).padStart(3, "0")}</td>
+            <td>${esc(v.datetime || "—")}</td>
+            <td>${violationBadges(v)}</td>
+            <td>${esc(v.process_category_label || v.process_category || "unsafe_act")}</td>
+          </tr>
+        `).join("");
+        vioWrap.innerHTML = `
+          <table>
+            <thead><tr><th>ID</th><th>Date & Time</th><th>Violation</th><th>Process Category</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      const snaps = document.getElementById("cameraSnapshots");
+      if (!list.length) {
+        snaps.innerHTML = '<div class="empty">No snapshots.</div>';
+      } else {
+        snaps.innerHTML = list.map(v => {
+          const media = v.clip
+            ? `<video src="/violations/${encodeURIComponent(v.clip)}" controls preload="metadata" playsinline></video>`
+            : `<img src="/violations/${encodeURIComponent(v.image || "")}" alt="Violation snapshot">`;
+          return `
+            <article class="snapshot">
+              ${media}
+              <div class="snapshot-meta">
+                <div><strong>${esc(v.datetime || "—")}</strong></div>
+                <div>${violationBadges(v)}</div>
+              </div>
+            </article>
+          `;
+        }).join("");
+      }
+
+      switchView("all-cameras", true);
+      document.getElementById("view-all-cameras").classList.add("hidden");
+      document.getElementById("view-camera-detail").classList.remove("hidden");
+      document.getElementById("pageTitle").textContent = "Camera Detail";
+    }
+
+    function switchView(key, keepMenuSelection) {
+      const views = {
+        "dashboard-2": "view-dashboard-2",
+        "all-cameras": "view-all-cameras",
+        "safety-checks": "view-safety-checks",
+        "help-support": "view-help-support",
+      };
+      const refreshBtn = document.getElementById("refreshBtn");
+      document.getElementById("view-dashboard-2").classList.add("hidden");
+      document.getElementById("view-all-cameras").classList.add("hidden");
+      document.getElementById("view-camera-detail").classList.add("hidden");
+      document.getElementById("view-safety-checks").classList.add("hidden");
+      document.getElementById("view-help-support").classList.add("hidden");
+
+      if (views[key]) document.getElementById(views[key]).classList.remove("hidden");
+      if (key === "dashboard-2") document.getElementById("pageTitle").textContent = "Dashboard 2";
+      if (key === "all-cameras") document.getElementById("pageTitle").textContent = "All Cameras";
+      if (key === "safety-checks") document.getElementById("pageTitle").textContent = "Safety Checks";
+      if (key === "help-support") document.getElementById("pageTitle").textContent = "Help & Support";
+      if (refreshBtn) {
+        if (key === "safety-checks" || key === "help-support") {
+          refreshBtn.classList.add("hidden");
+        } else {
+          refreshBtn.classList.remove("hidden");
+        }
+      }
+
+      if (!keepMenuSelection) {
+        document.querySelectorAll(".menu-btn").forEach(btn => btn.classList.remove("active"));
+        const activeBtn = document.querySelector(`.menu-btn[data-view="${key}"]`);
+        if (activeBtn) activeBtn.classList.add("active");
+      }
+    }
+
+    async function loadUser() {
+      const res = await fetch(API + "/api/me", { credentials: "same-origin" });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return null;
+      }
+      const user = await res.json();
+      const role = (user.role || "viewer").toLowerCase();
+      const locs = user.locations && user.locations.length ? user.locations.join(", ") : (role === "admin" ? "All locations" : "—");
+      document.getElementById("whoami").textContent = `Logged in as ${user.username || "User"} (${role}) — ${locs}`;
+      return user;
+    }
+
+    async function loadData() {
+      const [camRes, vioRes] = await Promise.all([
+        fetch(API + "/api/camera-policies/cameras", { credentials: "same-origin" }),
+        fetch(API + "/api/violations", { credentials: "same-origin" }),
+      ]);
+      violations = vioRes.ok ? await vioRes.json() : [];
+      if (camRes.status === 403) {
+        cameras = [];
+      } else {
+        cameras = camRes.ok ? await camRes.json() : [];
+      }
+      // Fallback: if camera setup is empty, derive virtual camera cards from violation locations.
+      if (!cameras.length && violations.length) {
+        const seen = new Set();
+        cameras = violations
+          .map(v => (v.location || "").trim())
+          .filter(loc => {
+            if (!loc) return false;
+            if (seen.has(loc)) return false;
+            seen.add(loc);
+            return true;
+          })
+          .map((loc, idx) => ({
+            id: `virtual_cam_${idx + 1}`,
+            name: `Camera ${idx + 1}`,
+            location_name: loc,
+            source: "virtual",
+          }));
+      }
+      renderLiveGrid();
+      renderCameraTable();
+      renderViolationTable();
+      renderDashboardKpis();
+      buildViolationChart();
+      if (currentCameraId) openCameraDetail(currentCameraId);
+    }
+
+    async function load() {
+      try {
+        const user = await loadUser();
+        if (!user) return;
+        await loadData();
+      } catch (e) {
+        console.error(e);
+        document.getElementById("liveCameraGrid").innerHTML = '<div class="empty">Could not load camera data.</div>';
+        document.getElementById("cameraTableWrap").innerHTML = '<div class="empty">Could not load list.</div>';
+        document.getElementById("violationTableWrap").innerHTML = '<div class="empty">Could not load violations.</div>';
+        const statusEl = document.getElementById("chartStatus");
+        if (statusEl) {
+          statusEl.textContent = "Could not load graph.";
+          statusEl.classList.remove("hidden");
+        }
+      }
+    }
+
+    document.querySelectorAll(".menu-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        switchView(btn.getAttribute("data-view"));
+      });
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", load);
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>
