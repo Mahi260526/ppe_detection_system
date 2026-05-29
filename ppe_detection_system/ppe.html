@@ -298,6 +298,29 @@
       border-radius: 12px;
       padding: 1rem;
     }
+    .chart-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .chart-head h3 { margin: 0; }
+    .chart-type-label {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-right: 0.4rem;
+    }
+    #chartTypeSelect {
+      background: #0f1722;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.4rem 0.65rem;
+      font-size: 0.85rem;
+      min-width: 220px;
+    }
     .badge {
       display: inline-block;
       padding: 0.14rem 0.45rem;
@@ -379,9 +402,9 @@
         <h1>SafeBuild Dashboard</h1>
         <p>PPE Monitoring Console</p>
       </div>
+      <button class="menu-btn active" data-view="dashboard-2">Dashboard</button>
       <a class="menu-link" href="/camera-setup">1) Camera Setup</a>
       <button class="menu-btn" data-view="all-cameras">2) All Cameras</button>
-      <button class="menu-btn active" data-view="dashboard-2">Dashboard 2 (Home)</button>
       <button class="menu-btn" data-view="safety-checks">3) Safety Checks</button>
       <button class="menu-btn" data-view="help-support">4) Help &amp; Support</button>
       <a class="menu-link" href="/logout">5) Logout</a>
@@ -390,7 +413,7 @@
     <main class="main">
       <div class="topbar">
         <div class="title">
-          <h2 id="pageTitle">Dashboard 2</h2>
+          <h2 id="pageTitle">Dashboard</h2>
           <p id="whoami">Loading user...</p>
         </div>
         <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
@@ -424,7 +447,18 @@
           </div>
         </div>
         <div class="chart-wrap">
-          <h3 style="margin-top:0;">Violation Trend (single graph)</h3>
+          <div class="chart-head">
+            <h3>Violation Trend</h3>
+            <div>
+              <label class="chart-type-label" for="chartTypeSelect">Graph type</label>
+              <select id="chartTypeSelect" title="Choose chart style">
+                <option value="bar" selected>Bar graph (counts)</option>
+                <option value="line">Line graph (counts)</option>
+                <option value="line-pct">Line graph (% of daily total)</option>
+                <option value="combined">Combined (bar + line %)</option>
+              </select>
+            </div>
+          </div>
           <canvas id="violationChart"></canvas>
           <div id="chartStatus" class="empty hidden" style="padding-top:0.7rem;"></div>
         </div>
@@ -863,22 +897,10 @@
       document.getElementById("k-mask").textContent = noMask;
     }
 
-    function buildViolationChart() {
-      const statusEl = document.getElementById("chartStatus");
-      if (statusEl) {
-        statusEl.textContent = "";
-        statusEl.classList.add("hidden");
-      }
-      if (!window.Chart) {
-        if (statusEl) {
-          statusEl.textContent = "Chart library unavailable (Chart.js not loaded).";
-          statusEl.classList.remove("hidden");
-        }
-        return;
-      }
+    function getViolationChartSeries() {
       const byDate = {};
       violations.forEach(v => {
-        const d = String(v.datetime || "").split(" ")[0];
+        const d = violationDateKey(v);
         if (!d) return;
         if (!byDate[d]) byDate[d] = { no_helmet: 0, no_vest: 0, no_glasses: 0, no_mask: 0 };
         if (v.no_helmet) byDate[d].no_helmet += 1;
@@ -892,70 +914,189 @@
       const ng = labels.map(d => byDate[d].no_glasses);
       const nm = labels.map(d => byDate[d].no_mask);
       const totals = labels.map((_, i) => nh[i] + nv[i] + ng[i] + nm[i]);
-      const toPct = (arr) => arr.map((v, i) => totals[i] > 0 ? (v * 100.0) / totals[i] : 0);
-      const nhPct = toPct(nh);
-      const nvPct = toPct(nv);
-      const ngPct = toPct(ng);
-      const nmPct = toPct(nm);
+      const toPct = (arr) => arr.map((v, i) => (totals[i] > 0 ? (v * 100.0) / totals[i] : 0));
+      return {
+        labels,
+        nh,
+        nv,
+        ng,
+        nm,
+        nhPct: toPct(nh),
+        nvPct: toPct(nv),
+        ngPct: toPct(ng),
+        nmPct: toPct(nm),
+      };
+    }
 
+    function getSelectedChartType() {
+      const sel = document.getElementById("chartTypeSelect");
+      return sel ? sel.value : "bar";
+    }
+
+    function buildViolationChartDatasets(chartType, series) {
+      const { nh, nv, ng, nm, nhPct, nvPct, ngPct, nmPct } = series;
+      const bar = (label, data, color) => ({
+        type: "bar",
+        label,
+        data,
+        yAxisID: "yCount",
+        backgroundColor: color,
+        borderRadius: 4,
+      });
+      const line = (label, data, borderColor, fillColor, dashed) => ({
+        type: "line",
+        label,
+        data,
+        yAxisID: chartType === "line-pct" || chartType === "combined" ? "yPct" : "yCount",
+        borderColor,
+        backgroundColor: fillColor,
+        pointRadius: 3,
+        tension: 0.3,
+        borderDash: dashed ? [6, 3] : undefined,
+      });
+
+      if (chartType === "bar") {
+        return [
+          bar("No Helmet", nh, "rgba(239,68,68,0.58)"),
+          bar("No Vest", nv, "rgba(245,158,11,0.56)"),
+          bar("No Glasses", ng, "rgba(34,197,94,0.56)"),
+          bar("No Mask", nm, "rgba(99,102,241,0.56)"),
+        ];
+      }
+      if (chartType === "line") {
+        return [
+          line("No Helmet", nh, "#fecaca", "rgba(254,202,202,0.3)", false),
+          line("No Vest", nv, "#fde68a", "rgba(253,230,138,0.3)", false),
+          line("No Glasses", ng, "#bbf7d0", "rgba(187,247,208,0.3)", false),
+          line("No Mask", nm, "#c7d2fe", "rgba(199,210,254,0.3)", false),
+        ];
+      }
+      if (chartType === "line-pct") {
+        return [
+          line("No Helmet %", nhPct, "#fecaca", "rgba(254,202,202,0.3)", true),
+          line("No Vest %", nvPct, "#fde68a", "rgba(253,230,138,0.3)", true),
+          line("No Glasses %", ngPct, "#bbf7d0", "rgba(187,247,208,0.3)", true),
+          line("No Mask %", nmPct, "#c7d2fe", "rgba(199,210,254,0.3)", true),
+        ];
+      }
+      return [
+        bar("No Helmet", nh, "rgba(239,68,68,0.58)"),
+        bar("No Vest", nv, "rgba(245,158,11,0.56)"),
+        bar("No Glasses", ng, "rgba(34,197,94,0.56)"),
+        bar("No Mask", nm, "rgba(99,102,241,0.56)"),
+        line("No Helmet %", nhPct, "#fecaca", "rgba(254,202,202,0.3)", true),
+        line("No Vest %", nvPct, "#fde68a", "rgba(253,230,138,0.3)", true),
+        line("No Glasses %", ngPct, "#bbf7d0", "rgba(187,247,208,0.3)", true),
+        line("No Mask %", nmPct, "#c7d2fe", "rgba(199,210,254,0.3)", true),
+      ];
+    }
+
+    function buildViolationChartOptions(chartType) {
+      const scales = {
+        x: { ticks: { color: "#95a4b7" }, grid: { color: "#2a3647" } },
+      };
+      if (chartType === "line-pct") {
+        scales.yPct = {
+          position: "left",
+          ticks: {
+            color: "#95a4b7",
+            callback: (v) => `${Number(v).toFixed(0)}%`,
+          },
+          grid: { color: "#2a3647" },
+          min: 0,
+          max: 100,
+          beginAtZero: true,
+          title: { display: true, text: "Ratio %", color: "#95a4b7" },
+        };
+      } else if (chartType === "combined") {
+        scales.yCount = {
+          position: "left",
+          ticks: { color: "#95a4b7" },
+          grid: { color: "#2a3647" },
+          beginAtZero: true,
+          title: { display: true, text: "Counts", color: "#95a4b7" },
+        };
+        scales.yPct = {
+          position: "right",
+          ticks: {
+            color: "#95a4b7",
+            callback: (v) => `${Number(v).toFixed(0)}%`,
+          },
+          grid: { drawOnChartArea: false },
+          min: 0,
+          max: 100,
+          title: { display: true, text: "Ratio %", color: "#95a4b7" },
+        };
+      } else {
+        scales.yCount = {
+          position: "left",
+          ticks: { color: "#95a4b7" },
+          grid: { color: "#2a3647" },
+          beginAtZero: true,
+          title: { display: true, text: "Counts", color: "#95a4b7" },
+        };
+      }
+      return {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#e6edf3", boxWidth: 14 } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const label = ctx.dataset.label || "";
+                const val = Number(ctx.parsed.y || 0);
+                return ctx.dataset.yAxisID === "yPct"
+                  ? `${label}: ${val.toFixed(1)}%`
+                  : `${label}: ${val}`;
+              },
+            },
+          },
+        },
+        scales,
+      };
+    }
+
+    function buildViolationChart() {
+      const statusEl = document.getElementById("chartStatus");
       const canvas = document.getElementById("violationChart");
+      if (statusEl) {
+        statusEl.textContent = "";
+        statusEl.classList.add("hidden");
+      }
+      if (!window.Chart) {
+        if (statusEl) {
+          statusEl.textContent = "Chart library unavailable (Chart.js not loaded).";
+          statusEl.classList.remove("hidden");
+        }
+        return;
+      }
       if (!canvas) return;
+
+      const chartType = getSelectedChartType();
+      const series = getViolationChartSeries();
+      if (!series.labels.length) {
+        if (violationChart) {
+          violationChart.destroy();
+          violationChart = null;
+        }
+        if (statusEl) {
+          statusEl.textContent = "No dated violations to chart for the current filter.";
+          statusEl.classList.remove("hidden");
+        }
+        return;
+      }
+
       const ctx = canvas.getContext("2d");
       if (violationChart) violationChart.destroy();
       try {
         violationChart = new Chart(ctx, {
+          type: chartType === "line" || chartType === "line-pct" ? "line" : "bar",
           data: {
-            labels,
-            datasets: [
-              { type: "bar", label: "No Helmet Count", data: nh, yAxisID: "yCount", backgroundColor: "rgba(239,68,68,0.58)", borderRadius: 4 },
-              { type: "bar", label: "No Vest Count", data: nv, yAxisID: "yCount", backgroundColor: "rgba(245,158,11,0.56)", borderRadius: 4 },
-              { type: "bar", label: "No Glasses Count", data: ng, yAxisID: "yCount", backgroundColor: "rgba(34,197,94,0.56)", borderRadius: 4 },
-              { type: "bar", label: "No Mask Count", data: nm, yAxisID: "yCount", backgroundColor: "rgba(99,102,241,0.56)", borderRadius: 4 },
-              { type: "line", label: "No Helmet %", data: nhPct, yAxisID: "yPct", borderColor: "#fecaca", backgroundColor: "rgba(254,202,202,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
-              { type: "line", label: "No Vest %", data: nvPct, yAxisID: "yPct", borderColor: "#fde68a", backgroundColor: "rgba(253,230,138,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
-              { type: "line", label: "No Glasses %", data: ngPct, yAxisID: "yPct", borderColor: "#bbf7d0", backgroundColor: "rgba(187,247,208,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
-              { type: "line", label: "No Mask %", data: nmPct, yAxisID: "yPct", borderColor: "#c7d2fe", backgroundColor: "rgba(199,210,254,0.3)", pointRadius: 2, tension: 0.3, borderDash: [6, 3] },
-            ],
+            labels: series.labels,
+            datasets: buildViolationChartDatasets(chartType, series),
           },
-          options: {
-            responsive: true,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-              legend: { labels: { color: "#e6edf3", boxWidth: 14 } },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const label = ctx.dataset.label || "";
-                    const val = Number(ctx.parsed.y || 0);
-                    return ctx.dataset.yAxisID === "yPct"
-                      ? `${label}: ${val.toFixed(1)}%`
-                      : `${label}: ${val}`;
-                  },
-                },
-              },
-            },
-            scales: {
-              x: { ticks: { color: "#95a4b7" }, grid: { color: "#2a3647" } },
-              yCount: {
-                position: "left",
-                ticks: { color: "#95a4b7" },
-                grid: { color: "#2a3647" },
-                beginAtZero: true,
-                title: { display: true, text: "Counts", color: "#95a4b7" },
-              },
-              yPct: {
-                position: "right",
-                ticks: {
-                  color: "#95a4b7",
-                  callback: (v) => `${Number(v).toFixed(0)}%`,
-                },
-                grid: { drawOnChartArea: false },
-                min: 0,
-                max: 100,
-                title: { display: true, text: "Ratio %", color: "#95a4b7" },
-              },
-            },
-          },
+          options: buildViolationChartOptions(chartType),
         });
       } catch (err) {
         console.error("chart build error:", err);
@@ -1039,7 +1180,7 @@
       document.getElementById("view-help-support").classList.add("hidden");
 
       if (views[key]) document.getElementById(views[key]).classList.remove("hidden");
-      if (key === "dashboard-2") document.getElementById("pageTitle").textContent = "Dashboard 2";
+      if (key === "dashboard-2") document.getElementById("pageTitle").textContent = "Dashboard";
       if (key === "all-cameras") document.getElementById("pageTitle").textContent = "All Cameras";
       if (key === "camera-detail") document.getElementById("pageTitle").textContent = "Camera Detail";
       if (key === "safety-checks") document.getElementById("pageTitle").textContent = "Safety Checks";
@@ -1097,11 +1238,24 @@
       }
     }
 
+    function applyViewFromUrl() {
+      const view = new URLSearchParams(window.location.search).get("view");
+      if (!view || view === "dashboard-2") return;
+      const allowed = ["all-cameras", "safety-checks", "help-support"];
+      if (!allowed.includes(view)) return;
+      switchView(view);
+      if (view === "all-cameras") {
+        renderLiveGrid();
+        renderCameraTable();
+      }
+    }
+
     async function load() {
       try {
         const user = await loadUser();
         if (!user) return;
         await loadData();
+        applyViewFromUrl();
       } catch (e) {
         console.error(e);
         document.getElementById("liveCameraGrid").innerHTML = '<div class="empty">Could not load camera data.</div>';
@@ -1133,6 +1287,10 @@
     });
 
     document.getElementById("refreshBtn").addEventListener("click", load);
+    const chartTypeSelect = document.getElementById("chartTypeSelect");
+    if (chartTypeSelect) {
+      chartTypeSelect.addEventListener("change", buildViolationChart);
+    }
     ["violationDateFrom", "violationDateTo"].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;

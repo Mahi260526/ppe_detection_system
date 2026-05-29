@@ -5,20 +5,68 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Camera Setup — PPE Monitoring</title>
   <style>
-    :root { --bg: #0f1419; --card: #1a2332; --accent: #00d4aa; --muted: #8b98a5; --danger: #f85149; --warn: #d29922; --border: #30363d; }
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --accent: #00d4aa;
+      --muted: #8b98a5;
+      --danger: #f85149;
+      --warn: #d29922;
+      --border: #30363d;
+      --line: #2a3647;
+      --text: #e6edf3;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: #e6edf3; min-height: 100vh; }
-    .header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .header h1 { margin: 0; font-size: 1.35rem; font-weight: 600; color: var(--accent); }
-    .nav-links { display: flex; gap: 0.75rem; align-items: center; }
-    .nav-links a { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
-    .nav-links a:hover { text-decoration: underline; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 250px 1fr;
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, #0c1320 0%, #0f1623 100%);
+      padding: 1rem 0.75rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .brand {
+      padding: 0.6rem 0.8rem 1rem;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 0.8rem;
+    }
+    .brand h1 { margin: 0; font-size: 1.08rem; color: var(--text); }
+    .brand p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.8rem; }
+    .menu-link {
+      width: 100%;
+      display: block;
+      text-decoration: none;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #c5d3e6;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      padding: 0.58rem 0.75rem;
+      margin-bottom: 0.3rem;
+    }
+    .menu-link:hover { background: #172233; color: #fff; }
+    .menu-link.active {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.3);
+      color: #fff;
+    }
+    .main { padding: 1.2rem 1.35rem; }
+    .topbar { margin-bottom: 1rem; }
+    .topbar h2 { margin: 0; font-size: 1.35rem; font-weight: 600; }
     .btn { background: var(--card); color: var(--accent); border: 1px solid var(--border); padding: 0.45rem 0.9rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; text-decoration: none; display: inline-block; }
     .btn:hover { background: #252d3a; }
     .btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
     .btn-danger { color: var(--danger); border-color: var(--danger); }
     .btn-danger:hover { background: rgba(248,81,73,0.15); }
-    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 2rem; }
+    .container { max-width: 1200px; }
     .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.75rem; color: #e6edf3; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -42,14 +90,25 @@
   </style>
 </head>
 <body>
-  <header class="header">
-    <h1>Camera Setup</h1>
-    <div class="nav-links">
-      <a href="/dashboard-v2" class="btn">Back</a>
-      <a href="/logout" class="btn">Logout</a>
-    </div>
-  </header>
-  <main class="container">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>SafeBuild Dashboard</h1>
+        <p>PPE Monitoring Console</p>
+      </div>
+      <a class="menu-link" href="/dashboard-v2">Dashboard</a>
+      <a class="menu-link active" href="/camera-setup">1) Camera Setup</a>
+      <a class="menu-link" href="/dashboard-v2?view=all-cameras">2) All Cameras</a>
+      <a class="menu-link" href="/dashboard-v2?view=safety-checks">3) Safety Checks</a>
+      <a class="menu-link" href="/dashboard-v2?view=help-support">4) Help &amp; Support</a>
+      <a class="menu-link" href="/logout">5) Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h2>Camera Setup</h2>
+      </div>
+      <div class="container">
     <h2 class="section-title">Cameras &amp; area-wise policies</h2>
     <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem;">Define cameras and, for each camera, define areas and what type of violation is generated in that area (PPE, person detected, person out of lane, vehicle detected).</p>
     <div class="card">
@@ -61,7 +120,9 @@
         <div class="empty">Loading…</div>
       </div>
     </div>
-  </main>
+      </div>
+    </main>
+  </div>
 
   <div class="modal-backdrop" id="cameraModal">
     <div class="modal">
