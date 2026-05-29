@@ -6,6 +6,20 @@ VIDEO_SOURCE = r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4"  # recorded 
 # Location name for this camera/source (used for filtering by user-assigned locations)
 LOCATION_NAME = "Main Gate"
 
+# Two demo cameras for All Cameras dashboard (run: python run_demo_cameras.py)
+DEMO_CAMERAS = [
+    {
+        "name": "Camera 1",
+        "location_name": "Site A",
+        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4",
+    },
+    {
+        "name": "Camera 2",
+        "location_name": "Site B",
+        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video3.mp4",
+    },
+]
+
 # Lowering this helps catch more misses (esp. helmet) but can increase noise.
 # Keep it modest on CPU, and rely on the confirmation logic in app.py.
 CONFIDENCE_THRESHOLD = 0.35

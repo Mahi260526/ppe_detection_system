@@ -182,6 +182,7 @@ VIOLATION_CLASS_MAP = {
 
 # Class name keywords that indicate a human/person detection (required in frame before raising violations)
 PERSON_CLASS_KEYWORDS = ["person", "human", "worker", "people", "man", "woman"]
+PERSON_DETECTED_VIOLATION_LABEL = "Violation - person is detected in the restricted area"
 POSITIVE_HARDHAT_KEYWORDS = ["hardhat", "hard hat", "helmet"]
 NEGATIVE_PPE_KEYWORDS = ["no ", "no-", "no_", "without", "missing"]
 
@@ -428,6 +429,42 @@ def get_primary_person_detection(results):
     return persons[0] if persons else None
 
 
+def _person_center_in_bounds(person_box, bounds, frame_w, frame_h):
+    """Check if a person's center lies inside normalized area bounds [x1, y1, x2, y2]."""
+    if frame_w <= 0 or frame_h <= 0:
+        return False
+    x1, y1, x2, y2 = person_box
+    cx = ((x1 + x2) / 2.0) / frame_w
+    cy = ((y1 + y2) / 2.0) / frame_h
+    bx1, by1, bx2, by2 = [float(b) for b in (bounds or [0, 0, 1, 1])[:4]]
+    return bx1 <= cx <= bx2 and by1 <= cy <= by2
+
+
+def get_area_rule_for_person(person_box, areas, frame_w, frame_h):
+    """
+    Decide which rule applies to a person based on camera setup zones.
+    person_detected zones take priority over PPE zones.
+    """
+    if not areas:
+        return "ppe"
+    in_person_zone = False
+    in_ppe_zone = False
+    for area in areas:
+        bounds = area.get("bounds") or [0, 0, 1, 1]
+        rule = (area.get("rule") or "ppe").strip().lower()
+        if not _person_center_in_bounds(person_box, bounds, frame_w, frame_h):
+            continue
+        if rule == "person_detected":
+            in_person_zone = True
+        elif rule == "ppe":
+            in_ppe_zone = True
+    if in_person_zone:
+        return "person_detected"
+    if in_ppe_zone:
+        return "ppe"
+    return "none"
+
+
 def refresh_reported_and_check_same(person_detection, reported_list, frame_width, frame_height, threshold_frac, left_frame_sec):
     """Refresh tracked reported persons and return whether this person matches one already reported."""
     if person_detection is None:
@@ -461,7 +498,16 @@ def refresh_reported_and_check_same(person_detection, reported_list, frame_width
 
     return updated, same_person
 
-def save_violation_image(annotated_frame, no_helmet=False, no_vest=False, no_glasses=False, no_mask=False, extra_label=""):
+def save_violation_image(
+    annotated_frame,
+    no_helmet=False,
+    no_vest=False,
+    no_glasses=False,
+    no_mask=False,
+    person_detected=False,
+    extra_label="",
+    location=None,
+):
     """Save violation snapshot with date/time; return (full_path, datetime_str, image_basename)."""
     import violations_log as vlog
     out_dir = vlog.VIOLATIONS_DIR
@@ -480,20 +526,35 @@ def save_violation_image(annotated_frame, no_helmet=False, no_vest=False, no_gla
     img = annotated_frame.copy()
     h, w = img.shape[:2]
     cv2.putText(img, date_time_str, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-    cv2.putText(img, "PPE VIOLATION", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
     tags = []
-    if no_helmet:
-        tags.append("No Helmet")
-    if no_vest:
-        tags.append("No Vest")
-    if no_glasses:
-        tags.append("No Glasses")
-    if no_mask:
-        tags.append("No Mask")
-    if tags:
-        cv2.putText(img, " | ".join(tags), (10, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+    if person_detected:
+        cv2.putText(img, "VIOLATION", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        cv2.putText(
+            img,
+            "Person is detected in the restricted area",
+            (10, 88),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.58,
+            (0, 165, 255),
+            2,
+        )
+        tags.append(PERSON_DETECTED_VIOLATION_LABEL)
+    else:
+        cv2.putText(img, "PPE VIOLATION", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        if no_helmet:
+            tags.append("No Helmet")
+        if no_vest:
+            tags.append("No Vest")
+        if no_glasses:
+            tags.append("No Glasses")
+        if no_mask:
+            tags.append("No Mask")
+        if tags:
+            cv2.putText(img, " | ".join(tags), (10, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
     cv2.imwrite(filename, img)
     basename = os.path.basename(filename)
+    from violations_log import build_violation_summary
+
     vlog.add_violation(
         date_time_str,
         basename,
@@ -501,8 +562,12 @@ def save_violation_image(annotated_frame, no_helmet=False, no_vest=False, no_gla
         no_vest=no_vest,
         no_glasses=no_glasses,
         no_mask=no_mask,
-        location=LOCATION_NAME,
+        person_detected=person_detected,
+        location=location if location is not None else LOCATION_NAME,
         image_path=filename,
+        violation_summary=build_violation_summary(
+            no_helmet, no_vest, no_glasses, no_mask, person_detected
+        ),
     )
     return filename, date_time_str, basename
 
@@ -716,11 +781,18 @@ def open_ip_camera(url):
         print(f"HTTP MJPEG reader failed: {e}")
     return None
 
-def main():
-    # Load YOLOv8 custom PPE model (ensure best.pt is in models folder)
-    print("Loading PPE Detection model...")
-    model = YOLO("models/best.pt")
-    print("Model loaded successfully!")
+def main(source=None, location_name=None, show_gui=None, model=None):
+    active_source = source if source is not None else VIDEO_SOURCE
+    active_location = location_name if location_name is not None else LOCATION_NAME
+    if show_gui is None:
+        show_gui = source is None
+
+    if model is None:
+        print("Loading PPE Detection model...")
+        model = YOLO("models/best.pt")
+        print("Model loaded successfully!")
+    else:
+        print("Using loaded PPE Detection model.")
     try:
         import email_alert
         if ENABLE_EMAIL_ALERTS and email_alert.is_email_configured():
@@ -733,7 +805,7 @@ def main():
         pass
 
     # Check if OpenCV GUI is available
-    gui_available = check_opencv_gui()
+    gui_available = show_gui and check_opencv_gui()
     if not gui_available:
         print("Warning: OpenCV GUI (cv2.imshow) is not available.")
         print("Frames will be saved to 'output_frames' directory instead.")
@@ -745,35 +817,55 @@ def main():
 
     # Initialize video capture
     print(f"\n{'='*60}")
-    print(f"Connecting to video source: {VIDEO_SOURCE}")
+    print(f"Connecting to video source: {active_source}")
+    print(f"Location: {active_location}")
     print(f"{'='*60}\n")
     
     # For IP camera streams, try multiple methods (OpenCV then HTTP MJPEG reader)
-    if isinstance(VIDEO_SOURCE, str) and ("http://" in VIDEO_SOURCE or "https://" in VIDEO_SOURCE or "rtsp://" in VIDEO_SOURCE):
-        video_source = open_ip_camera(VIDEO_SOURCE)
-        if video_source is None:
+    if isinstance(active_source, str) and ("http://" in active_source or "https://" in active_source or "rtsp://" in active_source):
+        capture = open_ip_camera(active_source)
+        if capture is None:
             print(f"\n{'='*60}")
             print("ERROR: Could not open IP camera stream")
             print(f"{'='*60}")
             print("\nTroubleshooting: Verify the URL works in a browser and check firewall/network.")
-            return
+            return False
     else:
         # Local camera (integer index) or recorded video file (string path)
-        if isinstance(VIDEO_SOURCE, str):
-            print(f"Opening video file: {VIDEO_SOURCE}")
+        if isinstance(active_source, str):
+            print(f"Opening video file: {active_source}")
         else:
-            print(f"Opening local camera: {VIDEO_SOURCE}")
-        video_source = cv2.VideoCapture(VIDEO_SOURCE)
-        if not video_source.isOpened():
-            print(f"Error: Could not open video source: {VIDEO_SOURCE}")
-            if isinstance(VIDEO_SOURCE, str) and not VIDEO_SOURCE.isdigit():
+            print(f"Opening local camera: {active_source}")
+        capture = cv2.VideoCapture(active_source)
+        if not capture.isOpened():
+            print(f"Error: Could not open video source: {active_source}")
+            if isinstance(active_source, str) and not active_source.isdigit():
                 print("For a video file, ensure the path is correct and the file exists (e.g. recorded_footage.mp4).")
-            return
+            return False
 
     print("Video source opened successfully!")
-    width = int(video_source.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(video_source.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = video_source.get(cv2.CAP_PROP_FPS)
+
+    import camera_policies as cam_policies
+    camera_areas = cam_policies.get_areas_for_location(active_location)
+    area_rules_reload_every = 30  # pick up Camera Setup changes without restarting detection
+
+    if camera_areas:
+        print(f"Area rules loaded for '{active_location}':")
+        for area in camera_areas:
+            rule = (area.get("rule") or "ppe").strip().lower()
+            if rule == "person_detected":
+                rule_label = "Person in restricted area (no PPE checks)"
+            elif rule == "ppe":
+                rule_label = "PPE (helmet, vest, mask, glasses)"
+            else:
+                rule_label = rule
+            print(f"  - {area.get('name', 'Area')}: {rule_label}")
+    else:
+        print(f"No area rules for '{active_location}' — using PPE detection on full frame.")
+
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = capture.get(cv2.CAP_PROP_FPS)
     if width and height:
         print(f"Video properties: {width}x{height} @ {fps} FPS\n")
     else:
@@ -798,10 +890,11 @@ def main():
     vest_history = deque(maxlen=max(1, int(VEST_CONFIRM_WINDOW_FRAMES)))
     mask_history = deque(maxlen=max(1, int(MASK_CONFIRM_WINDOW_FRAMES)))
     glasses_history = deque(maxlen=max(1, int(GLASSES_CONFIRM_WINDOW_FRAMES)))
+    person_detected_history = deque(maxlen=max(1, int(HELMET_CONFIRM_WINDOW_FRAMES)))
 
     try:
         while not stop_requested:
-            ret, frame = video_source.read()
+            ret, frame = capture.read()
             if not ret:
                 print("End of video stream or failed to read frame.")
                 break
@@ -813,10 +906,58 @@ def main():
             if not frame_has_person(results):
                 continue  # Skip frames where no human is detected (ignore machinery, cones, false PPE on objects)
 
-            no_helmet, no_vest, no_glasses, no_mask, runtime_notes = get_violation_types_from_results(results, frame=frame)
+            if frame_count > 0 and frame_count % area_rules_reload_every == 0:
+                camera_areas = cam_policies.get_areas_for_location(active_location)
 
+            h, w = frame.shape[:2]
+            primary_person = get_primary_person_detection(results)
+            area_rule = (
+                get_area_rule_for_person(primary_person["box"], camera_areas, w, h)
+                if primary_person
+                else "none"
+            )
+            if camera_areas and area_rule == "none":
+                continue  # Person is outside all configured zones — ignore frame
 
-            has_violation = any([no_helmet, no_vest, no_glasses, no_mask])
+            person_detected = False
+            if area_rule == "person_detected":
+                # Person-in-zone rule: any person in this area is the violation (no PPE checks).
+                person_detected_history.append(True)
+                pd_hits = sum(1 for x in person_detected_history if x)
+                person_detected = pd_hits >= HELMET_CONFIRM_REQUIRED_FRAMES
+                no_helmet = no_vest = no_glasses = no_mask = False
+                runtime_notes = []
+                if not person_detected:
+                    runtime_notes.append(
+                        f"Person pending: {pd_hits}/{HELMET_CONFIRM_REQUIRED_FRAMES}"
+                    )
+            else:
+                person_detected_history.append(False)
+                no_helmet, no_vest, no_glasses, no_mask, runtime_notes = get_violation_types_from_results(
+                    results, frame=frame
+                )
+                helmet_history.append(no_helmet)
+                vest_history.append(no_vest)
+                mask_history.append(no_mask)
+                glasses_history.append(no_glasses)
+                helmet_hits = sum(1 for x in helmet_history if x)
+                vest_hits = sum(1 for x in vest_history if x)
+                mask_hits = sum(1 for x in mask_history if x)
+                glasses_hits = sum(1 for x in glasses_history if x)
+                no_helmet = helmet_hits >= HELMET_CONFIRM_REQUIRED_FRAMES
+                no_vest = vest_hits >= VEST_CONFIRM_REQUIRED_FRAMES
+                no_mask = mask_hits >= MASK_CONFIRM_REQUIRED_FRAMES
+                no_glasses = glasses_hits >= GLASSES_CONFIRM_REQUIRED_FRAMES
+                if helmet_history and not no_helmet:
+                    runtime_notes.append(f"Helmet pending: {helmet_hits}/{HELMET_CONFIRM_REQUIRED_FRAMES}")
+                if vest_history and not no_vest:
+                    runtime_notes.append(f"Vest pending: {vest_hits}/{VEST_CONFIRM_REQUIRED_FRAMES}")
+                if mask_history and not no_mask:
+                    runtime_notes.append(f"Mask pending: {mask_hits}/{MASK_CONFIRM_REQUIRED_FRAMES}")
+                if glasses_history and not no_glasses:
+                    runtime_notes.append(f"Glasses pending: {glasses_hits}/{GLASSES_CONFIRM_REQUIRED_FRAMES}")
+
+            has_violation = person_detected or any([no_helmet, no_vest, no_glasses, no_mask])
 
             annotated_frame = results[0].plot()
             if runtime_notes:
@@ -864,9 +1005,16 @@ def main():
                     pass  # Same person still in frame – don't report again until they leave and come back
                 else:
                     path, dt_str, basename = save_violation_image(
-                        annotated_frame, no_helmet=no_helmet, no_vest=no_vest, no_glasses=no_glasses, no_mask=no_mask
+                        annotated_frame,
+                        no_helmet=no_helmet,
+                        no_vest=no_vest,
+                        no_glasses=no_glasses,
+                        no_mask=no_mask,
+                        person_detected=person_detected,
+                        location=active_location,
                     )
-                    print(f"Violation saved: {basename} ({dt_str})")
+                    vtype = PERSON_DETECTED_VIOLATION_LABEL if person_detected else "PPE violation"
+                    print(f"{vtype} saved: {basename} ({dt_str})")
                     last_violation_save_time = time.time()
                     primary_person = get_primary_person_detection(results)
                     if primary_person:
@@ -899,6 +1047,8 @@ def main():
                         import email_alert
                         if ENABLE_EMAIL_ALERTS and email_alert.is_email_configured() and (time.time() - last_email_time) >= EMAIL_COOLDOWN_SEC:
                             tags = []
+                            if person_detected:
+                                tags.append(PERSON_DETECTED_VIOLATION_LABEL)
                             if no_helmet:
                                 tags.append("No Helmet")
                             if no_vest:
@@ -909,9 +1059,9 @@ def main():
                                 tags.append("No Mask")
                             email_alert.send_email_in_background(
                                 path,
-                                video_source=str(VIDEO_SOURCE),
-                                violation_tags=tags or ["PPE violation"],
-                                location=LOCATION_NAME,
+                                video_source=str(active_source),
+                                violation_tags=tags or ["Violation"],
+                                location=active_location,
                                 datetime_str=dt_str,
                             )
                             last_email_time = time.time()
@@ -960,7 +1110,7 @@ def main():
         print("\nInterrupted by user (Ctrl+C).")
 
     try:
-        video_source.release()
+        capture.release()
     except Exception:
         pass
     if gui_available:
@@ -972,7 +1122,8 @@ def main():
     print(f"\nProcessing complete. Processed {frame_count} frames.")
     if not gui_available:
         print(f"All frames saved to 'output_frames' directory.")
-    sys.exit(0)
+    return True
 
 if __name__ == "__main__":
-    main()
+    ok = main()
+    sys.exit(0 if ok is not False else 1)

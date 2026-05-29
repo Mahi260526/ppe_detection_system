@@ -104,6 +104,62 @@
       cursor: pointer;
     }
     .btn:hover { background: #1b2737; }
+    .date-filter {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .date-filter label {
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    .date-filter input[type="date"] {
+      border: 1px solid var(--line);
+      background: var(--bg-panel-2);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.38rem 0.55rem;
+      font-size: 0.84rem;
+      color-scheme: dark;
+    }
+    .date-hint {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .date-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+    .date-chip {
+      border: 1px solid var(--line);
+      background: var(--bg-panel-2);
+      color: #c5d3e6;
+      border-radius: 999px;
+      padding: 0.22rem 0.65rem;
+      font-size: 0.76rem;
+      cursor: pointer;
+    }
+    .date-chip:hover { background: #1b2737; color: #fff; }
+    .date-chip.active {
+      background: rgba(59, 130, 246, 0.25);
+      border-color: rgba(59, 130, 246, 0.45);
+      color: #fff;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+    }
+    .section-head h3 {
+      margin: 0;
+    }
     .section {
       background: var(--bg-panel);
       border: 1px solid var(--line);
@@ -178,6 +234,23 @@
       object-fit: cover;
       display: block;
       background: #0a1018;
+    }
+    .camera-media-wrap {
+      position: relative;
+      height: 160px;
+      background: #0a1018;
+    }
+    .camera-shutdown {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a1018;
+      color: #95a4b7;
+      font-size: 0.88rem;
+      text-align: center;
+      padding: 1rem;
     }
     .camera-foot {
       padding: 0.5rem 0.7rem;
@@ -334,7 +407,18 @@
           <article class="kpi"><div class="k-label">No Mask</div><div class="k-value" id="k-mask" style="color:#c7d2fe;">0</div></article>
         </div>
         <div class="section">
-          <h3>Violation Table</h3>
+          <div class="section-head">
+            <h3>Violation Table</h3>
+            <div class="date-filter">
+              <label for="violationDateFrom">From</label>
+              <input type="date" id="violationDateFrom" title="Start date">
+              <label for="violationDateTo">To</label>
+              <input type="date" id="violationDateTo" title="End date">
+              <button type="button" class="btn" id="violationDateAllBtn">All dates</button>
+            </div>
+          </div>
+          <p id="violationDateHint" class="date-hint">Loading violations...</p>
+          <div id="violationDateChips" class="date-chips"></div>
           <div id="violationTableWrap">
             <div class="empty">Loading violations...</div>
           </div>
@@ -440,9 +524,128 @@
   <script>
     const API = "";
     let cameras = [];
+    let allViolations = [];
     let violations = [];
     let currentCameraId = "";
+    let activeView = "dashboard-2";
     let violationChart = null;
+
+    function violationDateKey(v) {
+      const raw = String(v && v.datetime ? v.datetime : "").trim();
+      if (!raw) return "";
+      if (raw.includes("T")) return raw.split("T")[0];
+      const part = raw.split(" ")[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(part)) return part;
+      const m = part.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (m) {
+        return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+      }
+      return part;
+    }
+
+    function getViolationDateCounts() {
+      const counts = {};
+      allViolations.forEach(v => {
+        const d = violationDateKey(v);
+        if (!d) return;
+        counts[d] = (counts[d] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function getFilteredViolations() {
+      const fromInput = document.getElementById("violationDateFrom");
+      const toInput = document.getElementById("violationDateTo");
+      const from = fromInput ? fromInput.value : "";
+      const to = toInput ? toInput.value : "";
+      if (!from && !to) return allViolations.slice();
+      return allViolations.filter(v => {
+        const d = violationDateKey(v);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+
+    function syncViolationDateInputBounds() {
+      const fromInput = document.getElementById("violationDateFrom");
+      const toInput = document.getElementById("violationDateTo");
+      if (!fromInput || !toInput) return;
+      const today = new Date();
+      const past = new Date();
+      past.setFullYear(today.getFullYear() - 2);
+      const minStr = past.toISOString().slice(0, 10);
+      const maxStr = today.toISOString().slice(0, 10);
+      fromInput.min = minStr;
+      fromInput.max = maxStr;
+      toInput.min = minStr;
+      toInput.max = maxStr;
+    }
+
+    function renderViolationDateChips() {
+      const wrap = document.getElementById("violationDateChips");
+      if (!wrap) return;
+      const counts = getViolationDateCounts();
+      const dates = Object.keys(counts).sort();
+      if (!dates.length) {
+        wrap.innerHTML = "";
+        return;
+      }
+      const fromInput = document.getElementById("violationDateFrom");
+      const toInput = document.getElementById("violationDateTo");
+      const from = fromInput ? fromInput.value : "";
+      const to = toInput ? toInput.value : "";
+      wrap.innerHTML = dates.map(d => {
+        const active = from === d && to === d;
+        return `<button type="button" class="date-chip${active ? " active" : ""}" data-date="${esc(d)}">${esc(d)} (${counts[d]})</button>`;
+      }).join("");
+      wrap.querySelectorAll(".date-chip").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const d = btn.getAttribute("data-date") || "";
+          if (fromInput) fromInput.value = d;
+          if (toInput) toInput.value = d;
+          applyViolationDateFilter();
+        });
+      });
+    }
+
+    function updateViolationDateHint() {
+      const hint = document.getElementById("violationDateHint");
+      if (!hint) return;
+      const fromInput = document.getElementById("violationDateFrom");
+      const toInput = document.getElementById("violationDateTo");
+      const from = fromInput ? fromInput.value : "";
+      const to = toInput ? toInput.value : "";
+      if (!allViolations.length) {
+        hint.textContent = "No violations recorded yet.";
+        return;
+      }
+      const counts = getViolationDateCounts();
+      const available = Object.keys(counts).sort().join(", ");
+      if (!from && !to) {
+        hint.textContent = `Showing all ${allViolations.length} violation(s). Dates with data: ${available}`;
+        return;
+      }
+      if (!violations.length) {
+        hint.textContent = `No violations in selected range. Dates with data: ${available}`;
+        return;
+      }
+      if (from && to && from === to) {
+        hint.textContent = `Showing ${violations.length} violation(s) on ${from}.`;
+        return;
+      }
+      hint.textContent = `Showing ${violations.length} violation(s) from ${from || "…"} to ${to || "…"}.`;
+    }
+
+    function applyViolationDateFilter() {
+      violations = getFilteredViolations();
+      renderViolationDateChips();
+      renderViolationTable();
+      renderDashboardKpis();
+      buildViolationChart();
+      updateViolationDateHint();
+    }
 
     function esc(s) {
       const d = document.createElement("div");
@@ -451,7 +654,13 @@
     }
 
     function violationBadges(v) {
+      const summary = (v.violation_summary || "").trim();
+      if (summary) {
+        const cls = summary.toLowerCase().includes("restricted area") ? "b-mask" : "b-helmet";
+        return `<span class="badge ${cls}">${esc(summary)}</span>`;
+      }
       const tags = [];
+      if (v.person_detected) tags.push('<span class="badge b-mask">Violation - person is detected in the restricted area</span>');
       if (v.no_helmet) tags.push('<span class="badge b-helmet">No Helmet</span>');
       if (v.no_vest) tags.push('<span class="badge b-vest">No Vest</span>');
       if (v.no_glasses) tags.push('<span class="badge b-glasses">No Glasses</span>');
@@ -464,13 +673,44 @@
       return violations.filter(v => (v.location || "").trim() === location);
     }
 
-    function activeStatus(camera) {
-      const list = byCamera(camera);
-      if (!list.length) return { label: "Not Live", cls: "offline" };
-      return { label: "Live", cls: "live" };
+    function cameraHasVideoSource(camera) {
+      if (!camera) return false;
+      if (camera.has_video_source === true) return true;
+      if (camera.has_video_source === false) return false;
+      const src = String(camera.source || "").trim();
+      if (!src || src.toLowerCase() === "virtual") return false;
+      if (/^(https?:\/\/|rtsp:\/\/)/i.test(src)) return true;
+      return /\.(mp4|avi|webm|mov|mkv)$/i.test(src);
     }
 
-    function cameraCardMediaHtml(v) {
+    function cameraSourceUrl(camera) {
+      if (!camera || !camera.id || !cameraHasVideoSource(camera)) return null;
+      const src = String(camera.source || "");
+      if (/\.(mp4|avi|webm|mov|mkv)$/i.test(src)) {
+        return "/camera-media/" + encodeURIComponent(camera.id);
+      }
+      return null;
+    }
+
+    function activeStatus(camera) {
+      const list = byCamera(camera);
+      if (cameraSourceUrl(camera)) {
+        return { label: list.length ? "Active" : "Ready", cls: "live" };
+      }
+      if (!list.length) return { label: "Not Live", cls: "offline" };
+      return { label: "Has Events", cls: "live" };
+    }
+
+    function cameraCardMediaHtml(camera, latestViolation) {
+      const sourceUrl = cameraSourceUrl(camera);
+      if (sourceUrl) {
+        return `
+          <div class="camera-media-wrap">
+            <video class="camera-video camera-source-video" src="${sourceUrl}" muted autoplay playsinline preload="metadata"></video>
+            <div class="camera-shutdown hidden">Camera is shutdown now</div>
+          </div>`;
+      }
+      const v = latestViolation;
       if (v && v.clip) {
         const clipUrl = "/violations/" + encodeURIComponent(v.clip);
         return `<video class="camera-video" src="${clipUrl}" muted loop autoplay playsinline preload="metadata"></video>`;
@@ -485,17 +725,34 @@
       return `<img class="camera-shot" src="${fallback}" alt="No media">`;
     }
 
+    function bindCameraSourceVideos() {
+      document.querySelectorAll(".camera-source-video").forEach(video => {
+        if (video.dataset.bound === "1") return;
+        video.dataset.bound = "1";
+        const wrap = video.closest(".camera-media-wrap");
+        const shutdownEl = wrap ? wrap.querySelector(".camera-shutdown") : null;
+        const footStatus = video.closest(".camera-card")?.querySelector(".camera-foot-status");
+        video.addEventListener("ended", () => {
+          video.classList.add("hidden");
+          if (shutdownEl) shutdownEl.classList.remove("hidden");
+          if (footStatus) {
+            footStatus.innerHTML = '<span class="dot offline"></span>Camera shutdown';
+          }
+        });
+      });
+    }
+
     function renderLiveGrid() {
       const el = document.getElementById("liveCameraGrid");
       if (!cameras.length) {
-        el.innerHTML = '<div class="empty">No cameras configured. Go to Camera Setup.</div>';
+        el.innerHTML = '<div class="empty">No cameras with a registered video yet. Add one in Camera Setup.</div>';
         return;
       }
       el.innerHTML = cameras.map((c, idx) => {
         const list = byCamera(c);
         const latest = list[0];
         const status = activeStatus(c);
-        const mediaHtml = cameraCardMediaHtml(latest);
+        const mediaHtml = cameraCardMediaHtml(c, latest);
         return `
           <article class="camera-card">
             <div class="camera-head">
@@ -504,18 +761,19 @@
             </div>
             ${mediaHtml}
             <div class="camera-foot">
-              <span><span class="dot ${status.cls}"></span>${status.label}</span>
+              <span class="camera-foot-status"><span class="dot ${status.cls}"></span>${status.label}</span>
               <span>${latest ? esc(latest.datetime || "") : "No recent events"}</span>
             </div>
           </article>
         `;
       }).join("");
+      bindCameraSourceVideos();
     }
 
     function renderCameraTable() {
       const el = document.getElementById("cameraTableWrap");
       if (!cameras.length) {
-        el.innerHTML = '<div class="empty">No cameras configured.</div>';
+        el.innerHTML = '<div class="empty">No cameras with a registered video yet. Add one in Camera Setup.</div>';
         return;
       }
       const rows = cameras.map((c, idx) => {
@@ -550,8 +808,21 @@
 
     function renderViolationTable() {
       const el = document.getElementById("violationTableWrap");
-      if (!violations.length) {
+      if (!allViolations.length) {
         el.innerHTML = '<div class="empty">No violations found yet.</div>';
+        return;
+      }
+      if (!violations.length) {
+        const fromInput = document.getElementById("violationDateFrom");
+        const toInput = document.getElementById("violationDateTo");
+        const from = fromInput ? fromInput.value : "";
+        const to = toInput ? toInput.value : "";
+        const counts = getViolationDateCounts();
+        const available = Object.keys(counts).sort().join(", ") || "none";
+        let msg = "No violations match this date filter.";
+        if (from && to && from === to) msg = `No violations on ${esc(from)}.`;
+        else if (from || to) msg = `No violations from ${esc(from || "…")} to ${esc(to || "…")}.`;
+        el.innerHTML = `<div class="empty">${msg}<br>Available dates: ${esc(available)}</div>`;
         return;
       }
       const rows = violations.map((v, i) => `
@@ -695,10 +966,9 @@
       }
     }
 
-    function openCameraDetail(camId) {
+    function renderCameraDetailContent(camId) {
       const camera = cameras.find(c => String(c.id) === String(camId));
       if (!camera) return;
-      currentCameraId = camId;
       const list = byCamera(camera);
       document.getElementById("cameraDetailTitle").textContent = `Camera ${camera.id} — ${camera.location_name || "Unknown location"}`;
 
@@ -741,20 +1011,26 @@
           `;
         }).join("");
       }
+    }
 
-      switchView("all-cameras", true);
-      document.getElementById("view-all-cameras").classList.add("hidden");
-      document.getElementById("view-camera-detail").classList.remove("hidden");
-      document.getElementById("pageTitle").textContent = "Camera Detail";
+    function openCameraDetail(camId) {
+      const camera = cameras.find(c => String(c.id) === String(camId));
+      if (!camera) return;
+      currentCameraId = camId;
+      renderCameraDetailContent(camId);
+      switchView("camera-detail", true);
     }
 
     function switchView(key, keepMenuSelection) {
       const views = {
         "dashboard-2": "view-dashboard-2",
         "all-cameras": "view-all-cameras",
+        "camera-detail": "view-camera-detail",
         "safety-checks": "view-safety-checks",
         "help-support": "view-help-support",
       };
+      activeView = key;
+      if (key !== "camera-detail") currentCameraId = "";
       const refreshBtn = document.getElementById("refreshBtn");
       document.getElementById("view-dashboard-2").classList.add("hidden");
       document.getElementById("view-all-cameras").classList.add("hidden");
@@ -765,6 +1041,7 @@
       if (views[key]) document.getElementById(views[key]).classList.remove("hidden");
       if (key === "dashboard-2") document.getElementById("pageTitle").textContent = "Dashboard 2";
       if (key === "all-cameras") document.getElementById("pageTitle").textContent = "All Cameras";
+      if (key === "camera-detail") document.getElementById("pageTitle").textContent = "Camera Detail";
       if (key === "safety-checks") document.getElementById("pageTitle").textContent = "Safety Checks";
       if (key === "help-support") document.getElementById("pageTitle").textContent = "Help & Support";
       if (refreshBtn) {
@@ -800,36 +1077,24 @@
         fetch(API + "/api/camera-policies/cameras", { credentials: "same-origin" }),
         fetch(API + "/api/violations", { credentials: "same-origin" }),
       ]);
-      violations = vioRes.ok ? await vioRes.json() : [];
-      if (camRes.status === 403) {
-        cameras = [];
-      } else {
-        cameras = camRes.ok ? await camRes.json() : [];
+      allViolations = vioRes.ok ? await vioRes.json() : [];
+      syncViolationDateInputBounds();
+      violations = getFilteredViolations();
+      const allCameras = camRes.ok ? await camRes.json() : [];
+      // Only show cameras whose video file/stream actually exists (server-checked).
+      cameras = allCameras.filter(c => c.has_video_source === true);
+      if (activeView === "dashboard-2") {
+        renderViolationDateChips();
+        renderViolationTable();
+        renderDashboardKpis();
+        buildViolationChart();
+        updateViolationDateHint();
+      } else if (activeView === "all-cameras") {
+        renderLiveGrid();
+        renderCameraTable();
+      } else if (activeView === "camera-detail" && currentCameraId) {
+        renderCameraDetailContent(currentCameraId);
       }
-      // Fallback: if camera setup is empty, derive virtual camera cards from violation locations.
-      if (!cameras.length && violations.length) {
-        const seen = new Set();
-        cameras = violations
-          .map(v => (v.location || "").trim())
-          .filter(loc => {
-            if (!loc) return false;
-            if (seen.has(loc)) return false;
-            seen.add(loc);
-            return true;
-          })
-          .map((loc, idx) => ({
-            id: `virtual_cam_${idx + 1}`,
-            name: `Camera ${idx + 1}`,
-            location_name: loc,
-            source: "virtual",
-          }));
-      }
-      renderLiveGrid();
-      renderCameraTable();
-      renderViolationTable();
-      renderDashboardKpis();
-      buildViolationChart();
-      if (currentCameraId) openCameraDetail(currentCameraId);
     }
 
     async function load() {
@@ -852,13 +1117,37 @@
 
     document.querySelectorAll(".menu-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        switchView(btn.getAttribute("data-view"));
+        const view = btn.getAttribute("data-view");
+        switchView(view);
+        if (view === "dashboard-2") {
+          renderViolationDateChips();
+          renderViolationTable();
+          renderDashboardKpis();
+          buildViolationChart();
+          updateViolationDateHint();
+        } else if (view === "all-cameras") {
+          renderLiveGrid();
+          renderCameraTable();
+        }
       });
     });
 
     document.getElementById("refreshBtn").addEventListener("click", load);
+    ["violationDateFrom", "violationDateTo"].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("change", applyViolationDateFilter);
+      el.addEventListener("input", applyViolationDateFilter);
+    });
+    document.getElementById("violationDateAllBtn").addEventListener("click", () => {
+      const fromInput = document.getElementById("violationDateFrom");
+      const toInput = document.getElementById("violationDateTo");
+      if (fromInput) fromInput.value = "";
+      if (toInput) toInput.value = "";
+      applyViolationDateFilter();
+    });
     load();
-    setInterval(load, 10000);
+    setInterval(load, 30000);
   </script>
 </body>
 </html>

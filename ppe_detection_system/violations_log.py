@@ -15,6 +15,12 @@ VIOLATIONS_DIR = os.path.join(BASE_DIR, "violations")
 VIOLATIONS_JSON = os.path.join(VIOLATIONS_DIR, "violations_data.json")  # legacy migration source
 VIOLATIONS_DB = os.path.join(VIOLATIONS_DIR, "violations.db")
 _lock = Lock()
+_metadata_backfill_complete = False
+
+IMAGE_FILENAME_RE = re.compile(
+    r"^violation_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_(\d{3}))?\.jpg$",
+    re.IGNORECASE,
+)
 
 PROCESS_CATEGORY_UNSAFE_ACT = "unsafe_act"
 PROCESS_CATEGORY_NEAR_MISS = "near_miss"
@@ -40,8 +46,9 @@ PROCESS_CATEGORY_LABELS = {
 
 
 def _get_connection():
-    conn = sqlite3.connect(VIOLATIONS_DB)
+    conn = sqlite3.connect(VIOLATIONS_DB, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -88,6 +95,255 @@ def _ensure_columns(conn):
             "ALTER TABLE violations ADD COLUMN process_category TEXT NOT NULL DEFAULT 'unsafe_act'"
         )
         conn.commit()
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(violations)").fetchall()
+    }
+    if "person_detected" not in columns:
+        conn.execute(
+            "ALTER TABLE violations ADD COLUMN person_detected INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(violations)").fetchall()
+    }
+    if "violation_summary" not in columns:
+        conn.execute(
+            "ALTER TABLE violations ADD COLUMN violation_summary TEXT NOT NULL DEFAULT ''"
+        )
+        conn.commit()
+
+
+PERSON_DETECTED_SUMMARY = "Violation - person is detected in the restricted area"
+
+
+def build_violation_summary(
+    no_helmet=False,
+    no_vest=False,
+    no_glasses=False,
+    no_mask=False,
+    person_detected=False,
+):
+    if person_detected:
+        return PERSON_DETECTED_SUMMARY
+    tags = []
+    if no_helmet:
+        tags.append("No Helmet")
+    if no_vest:
+        tags.append("No Vest")
+    if no_glasses:
+        tags.append("No Glasses")
+    if no_mask:
+        tags.append("No Mask")
+    return " | ".join(tags)
+
+
+def _snapshot_has_ppe_violation_title(frame):
+    """True when the snapshot header is the wide red 'PPE VIOLATION' banner."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return False
+
+    h, w = frame.shape[:2]
+    title = frame[int(h * 0.04) : int(h * 0.10), 0:int(w)]
+    red = cv2.inRange(title, np.array([0, 0, 150]), np.array([100, 100, 255]))
+    cols = np.where(red.any(axis=0))[0]
+    if cols.size == 0:
+        return False
+    title_span = (cols[-1] - cols[0] + 1) / float(max(w, 1))
+    return title_span > 0.25
+
+
+def _location_uses_ppe_area_rule(location_name):
+    """True when this location has no person-in-zone area rules (PPE checks apply)."""
+    try:
+        import camera_policies as cam_policies
+    except ImportError:
+        return True
+
+    areas = cam_policies.get_areas_for_location(location_name)
+    if not areas:
+        return True
+    rules = [(a.get("rule") or "ppe").strip().lower() for a in areas]
+    return "person_detected" not in rules
+
+
+def _snapshot_is_person_restricted_area_overlay(frame):
+    """
+    True only for snapshots saved with the person-in-restricted-area overlay
+    (narrow red 'VIOLATION' title + long orange subtitle). PPE snapshots use a
+    wide 'PPE VIOLATION' title and must not match this check.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return False
+
+    if _snapshot_has_ppe_violation_title(frame):
+        return False
+
+    h, w = frame.shape[:2]
+    title = frame[int(h * 0.045) : int(h * 0.078), 0:int(w)]
+    red = cv2.inRange(title, np.array([0, 0, 150]), np.array([100, 100, 255]))
+    if int(red.sum()) < 1500:
+        return False
+    cols = np.where(red.any(axis=0))[0]
+    if cols.size == 0:
+        return False
+    title_span = (cols[-1] - cols[0] + 1) / float(max(w, 1))
+    if title_span > 0.15:
+        return False
+    # Person subtitle sits above PPE tag line (y≈88 vs y≈95 on 1080p frames).
+    person_line = frame[int(h * 0.078) : int(h * 0.092), int(w * 0.01) : int(w * 0.75)]
+    orange = cv2.inRange(person_line, np.array([0, 130, 190]), np.array([60, 210, 255]))
+    return int(orange.sum()) > 150000
+
+
+def infer_violation_flags_from_snapshot(image_path, location=None):
+    """Read violation type from snapshot overlay text layout or re-run detection."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return {}
+
+    frame = cv2.imread(image_path)
+    if frame is None:
+        return {}
+
+    h, w = frame.shape[:2]
+
+    loc = (location or "").strip()
+    person_overlay = _snapshot_is_person_restricted_area_overlay(frame)
+    if person_overlay and not (loc and _location_uses_ppe_area_rule(loc)):
+        return {
+            "no_helmet": False,
+            "no_vest": False,
+            "no_glasses": False,
+            "no_mask": False,
+            "person_detected": True,
+            "violation_summary": PERSON_DETECTED_SUMMARY,
+        }
+
+    try:
+        from ultralytics import YOLO
+        from app import get_violation_types_from_results
+
+        model = YOLO("models/best.pt")
+        results = model(frame, conf=0.25, verbose=False)
+        nh, nv, ng, nm, _ = get_violation_types_from_results(results, frame=frame)
+        if any([nh, nv, ng, nm]):
+            return {
+                "no_helmet": nh,
+                "no_vest": nv,
+                "no_glasses": ng,
+                "no_mask": nm,
+                "person_detected": False,
+                "violation_summary": build_violation_summary(nh, nv, ng, nm, False),
+            }
+    except Exception:
+        pass
+
+    title = frame[int(h * 0.04) : int(h * 0.09), int(w * 0.01) : int(w * 0.45)]
+    red_mask = cv2.inRange(title, np.array([0, 0, 150]), np.array([100, 100, 255]))
+    if int(red_mask.sum()) > 2000:
+        return {
+            "no_helmet": False,
+            "no_vest": False,
+            "no_glasses": False,
+            "no_mask": False,
+            "person_detected": False,
+            "violation_summary": "PPE violation (imported)",
+        }
+    return {}
+
+
+def backfill_violation_metadata():
+    """Fill violation type labels for imported or legacy rows."""
+    generic_summaries = {"", "Violation", "Violation (imported)", "PPE violation (imported)"}
+    with _lock:
+        _ensure_db()
+        updated = 0
+        with _get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT image, no_helmet, no_vest, no_glasses, no_mask, person_detected, violation_summary, location
+                FROM violations
+                """
+            ).fetchall()
+            for row in rows:
+                summary = (row["violation_summary"] or "").strip()
+                nh = bool(row["no_helmet"])
+                nv = bool(row["no_vest"])
+                ng = bool(row["no_glasses"])
+                nm = bool(row["no_mask"])
+                pd = bool(row["person_detected"])
+                image_path = os.path.join(VIOLATIONS_DIR, row["image"])
+                row_location = (row["location"] if "location" in row.keys() else "") or ""
+
+                # Re-check person_detected rows (old backfill often mislabeled PPE snapshots).
+                if pd or "restricted area" in summary.lower():
+                    inferred = infer_violation_flags_from_snapshot(image_path, location=row_location)
+                    if inferred:
+                        nh = bool(inferred.get("no_helmet"))
+                        nv = bool(inferred.get("no_vest"))
+                        ng = bool(inferred.get("no_glasses"))
+                        nm = bool(inferred.get("no_mask"))
+                        pd = bool(inferred.get("person_detected"))
+                        summary = inferred.get("violation_summary") or build_violation_summary(
+                            nh, nv, ng, nm, pd
+                        )
+                    conn.execute(
+                        """
+                        UPDATE violations
+                        SET no_helmet = ?, no_vest = ?, no_glasses = ?, no_mask = ?,
+                            person_detected = ?, violation_summary = ?
+                        WHERE image = ?
+                        """,
+                        (int(nh), int(nv), int(ng), int(nm), int(pd), summary, row["image"]),
+                    )
+                    updated += 1
+                    continue
+
+                if summary not in generic_summaries and (nh or nv or ng or nm or pd):
+                    continue
+                if summary not in generic_summaries:
+                    continue
+
+                if (nh or nv or ng or nm or pd) and summary in generic_summaries:
+                    summary = build_violation_summary(nh, nv, ng, nm, pd)
+                    conn.execute(
+                        "UPDATE violations SET violation_summary = ? WHERE image = ?",
+                        (summary, row["image"]),
+                    )
+                    updated += 1
+                    continue
+
+                inferred = infer_violation_flags_from_snapshot(image_path, location=row_location)
+                if inferred:
+                    nh = bool(inferred.get("no_helmet"))
+                    nv = bool(inferred.get("no_vest"))
+                    ng = bool(inferred.get("no_glasses"))
+                    nm = bool(inferred.get("no_mask"))
+                    pd = bool(inferred.get("person_detected"))
+                    summary = inferred.get("violation_summary") or build_violation_summary(nh, nv, ng, nm, pd)
+                else:
+                    summary = "Violation (imported)"
+
+                conn.execute(
+                    """
+                    UPDATE violations
+                    SET no_helmet = ?, no_vest = ?, no_glasses = ?, no_mask = ?,
+                        person_detected = ?, violation_summary = ?
+                    WHERE image = ?
+                    """,
+                    (int(nh), int(nv), int(ng), int(nm), int(pd), summary, row["image"]),
+                )
+                updated += 1
+            conn.commit()
+        return updated
 
 
 def _ensure_db():
@@ -159,6 +415,90 @@ def _read_image_payload(image_path):
     return blob, mime or "image/jpeg"
 
 
+def _datetime_from_image_match(match):
+    date = match.group(1)
+    h, mi, s = match.group(2), match.group(3), match.group(4)
+    return f"{date} {h}:{mi}:{s}"
+
+
+def _clip_for_image(image_basename):
+    base, _ = os.path.splitext(image_basename)
+    clip_name = f"{base}_clip.mp4"
+    clip_path = os.path.join(VIOLATIONS_DIR, clip_name)
+    return clip_name if os.path.isfile(clip_path) else ""
+
+
+def sync_violations_from_disk():
+    """Import violation images/clips saved on disk into the SQLite database."""
+    with _lock:
+        _ensure_db()
+        imported = 0
+        updated = 0
+        with _get_connection() as conn:
+            known = {
+                row["image"]: (row["clip"] or "")
+                for row in conn.execute("SELECT image, clip FROM violations").fetchall()
+            }
+            for name in sorted(os.listdir(VIOLATIONS_DIR)):
+                match = IMAGE_FILENAME_RE.match(name)
+                if not match:
+                    continue
+                clip = _clip_for_image(name)
+                if name in known:
+                    if clip and not known[name]:
+                        conn.execute(
+                            "UPDATE violations SET clip = ? WHERE image = ?",
+                            (clip, name),
+                        )
+                        updated += 1
+                    continue
+                dt = _datetime_from_image_match(match)
+                image_path = os.path.join(VIOLATIONS_DIR, name)
+                image_blob, image_mime = _read_image_payload(image_path)
+                vid = _next_id(conn)
+                inferred = infer_violation_flags_from_snapshot(image_path)
+                nh = bool(inferred.get("no_helmet")) if inferred else False
+                nv = bool(inferred.get("no_vest")) if inferred else False
+                ng = bool(inferred.get("no_glasses")) if inferred else False
+                nm = bool(inferred.get("no_mask")) if inferred else False
+                pd = bool(inferred.get("person_detected")) if inferred else False
+                summary = (
+                    (inferred.get("violation_summary") if inferred else "")
+                    or build_violation_summary(nh, nv, ng, nm, pd)
+                    or "Violation (imported)"
+                )
+                conn.execute(
+                    """
+                    INSERT INTO violations (
+                        id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
+                        person_detected, location, clip, process_category, image_blob, image_mime,
+                        violation_summary
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        vid,
+                        dt,
+                        name,
+                        int(nh),
+                        int(nv),
+                        int(ng),
+                        int(nm),
+                        int(pd),
+                        "",
+                        clip,
+                        PROCESS_CATEGORY_UNSAFE_ACT,
+                        image_blob,
+                        image_mime,
+                        summary,
+                    ),
+                )
+                imported += 1
+            conn.commit()
+        if imported:
+            backfill_violation_metadata()
+        return {"imported": imported, "updated": updated}
+
+
 def _next_id(conn):
     row = conn.execute(
         """
@@ -186,6 +526,8 @@ def _row_to_violation(row):
         "no_vest": bool(row["no_vest"]),
         "no_glasses": bool(row["no_glasses"]),
         "no_mask": bool(row["no_mask"]),
+        "person_detected": bool(row["person_detected"]) if "person_detected" in row.keys() else False,
+        "violation_summary": (row["violation_summary"] or "").strip() if "violation_summary" in row.keys() else "",
         "location": row["location"] or "",
         "clip": row["clip"] or "",
         "process_category": process_category,
@@ -200,12 +542,19 @@ def add_violation(
     no_vest=False,
     no_glasses=False,
     no_mask=False,
+    person_detected=False,
     location=None,
     clip=None,
     image_path=None,
     process_category=PROCESS_CATEGORY_UNSAFE_ACT,
+    violation_summary=None,
 ):
     """Insert one violation row and store the image bytes in the database."""
+    summary = violation_summary
+    if summary is None:
+        summary = build_violation_summary(
+            no_helmet, no_vest, no_glasses, no_mask, person_detected
+        )
     with _lock:
         _ensure_db()
         image_blob, image_mime = _read_image_payload(image_path or os.path.join(VIOLATIONS_DIR, image_basename))
@@ -216,8 +565,9 @@ def add_violation(
                 """
                 INSERT INTO violations (
                     id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
-                    location, clip, process_category, image_blob, image_mime
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    person_detected, location, clip, process_category, image_blob, image_mime,
+                    violation_summary
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     vid,
@@ -227,11 +577,13 @@ def add_violation(
                     int(bool(no_vest)),
                     int(bool(no_glasses)),
                     int(bool(no_mask)),
+                    int(bool(person_detected)),
                     (location or "").strip(),
                     (clip or "").strip(),
                     normalize_process_category(process_category),
                     image_blob,
                     image_mime,
+                    (summary or "").strip(),
                 ),
             )
             conn.commit()
@@ -271,7 +623,8 @@ def _get_all_raw():
         with _get_connection() as conn:
             rows = conn.execute(
                 """
-                SELECT id, datetime, image, no_helmet, no_vest, no_glasses, no_mask, location, clip, process_category
+                SELECT id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
+                       person_detected, location, clip, process_category, violation_summary
                 FROM violations
                 ORDER BY datetime DESC, id DESC
                 """
@@ -281,6 +634,11 @@ def _get_all_raw():
 
 def get_all_violations(locations=None):
     """Return list of violation records (newest first)."""
+    global _metadata_backfill_complete
+    sync_result = sync_violations_from_disk()
+    if not _metadata_backfill_complete or sync_result.get("imported"):
+        backfill_violation_metadata()
+        _metadata_backfill_complete = True
     items = _get_all_raw()
     if not locations:
         return items
@@ -315,7 +673,8 @@ def get_violation_by_file(filename):
         with _get_connection() as conn:
             row = conn.execute(
                 """
-                SELECT id, datetime, image, no_helmet, no_vest, no_glasses, no_mask, location, clip, process_category
+                SELECT id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
+                       person_detected, location, clip, process_category, violation_summary
                 FROM violations
                 WHERE image = ? OR clip = ?
                 LIMIT 1

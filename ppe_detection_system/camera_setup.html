@@ -120,7 +120,7 @@
         <label>Violation rule</label>
         <select id="areaRule">
           <option value="ppe">PPE violation (no helmet, vest, etc.)</option>
-          <option value="person_detected">Person detected (any person = violation)</option>
+          <option value="person_detected">Violation - person is detected in the restricted area</option>
           <option value="person_out_of_lane">Person out of lane</option>
           <option value="vehicle_detected">Vehicle detected</option>
         </select>
@@ -218,7 +218,11 @@
         credentials: "same-origin",
         body: JSON.stringify({ id: id || undefined, name, source, location_name }),
       });
-      if (!res.ok) { alert("Failed to save camera"); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to save camera");
+        return;
+      }
       document.getElementById("cameraModal").style.display = "none";
       loadCameras();
     }

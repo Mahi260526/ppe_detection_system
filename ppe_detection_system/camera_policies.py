@@ -15,7 +15,7 @@ _lock = Lock()
 # Rule types: what violation is generated when condition is met in that area
 RULE_TYPES = [
     {"id": "ppe", "label": "PPE violation", "description": "No helmet, no vest, no glasses, no mask"},
-    {"id": "person_detected", "label": "Person detected", "description": "Any person in this area is a violation"},
+    {"id": "person_detected", "label": "Violation - person is detected in the restricted area", "description": "Any person in this restricted area is a violation"},
     {"id": "person_out_of_lane", "label": "Person out of lane", "description": "Person outside defined walking lane"},
     {"id": "vehicle_detected", "label": "Vehicle detected", "description": "Any vehicle in this area is a violation"},
 ]
@@ -44,16 +44,132 @@ def _save(data):
 def get_rule_types():
     return list(RULE_TYPES)
 
-def get_cameras():
-    """Return list of cameras (id, name, source, location_name)."""
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".webm", ".mov", ".mkv")
+
+
+def resolve_video_file_path(source):
+    """Return an existing video path, correcting common filename typos when possible."""
+    if source is None or isinstance(source, (int, float)):
+        return source
+    src = str(source).strip()
+    if not src or src.lower().startswith(("http://", "https://", "rtsp://")):
+        return source
+    if not src.lower().endswith(VIDEO_EXTENSIONS):
+        return source
+
+    path = os.path.abspath(src)
+    if os.path.isfile(path):
+        return path
+
+    folder = os.path.dirname(path)
+    if not os.path.isdir(folder):
+        return source
+
+    filename = os.path.basename(path)
+    for fname in os.listdir(folder):
+        if fname.lower() == filename.lower() and fname.lower().endswith(VIDEO_EXTENSIONS):
+            return os.path.join(folder, fname)
+
+    typo_map = {
+        "sample_video3.mp4": ["sample_vide03.mp4"],
+        "sample_vide03.mp4": ["sample_video3.mp4"],
+    }
+    for alt in typo_map.get(filename.lower(), []):
+        candidate = os.path.join(folder, alt)
+        if os.path.isfile(candidate):
+            return candidate
+
+    return source
+
+
+def camera_has_video_source(cam):
+    """True when camera has a usable video file, stream URL, or webcam index."""
+    source = cam.get("source") if cam else None
+    if source is None:
+        return False
+    if isinstance(source, (int, float)):
+        return int(source) >= 0
+    src = str(source).strip()
+    if not src or src.lower() == "virtual":
+        return False
+    lower = src.lower()
+    if lower.startswith(("http://", "https://", "rtsp://")):
+        return True
+    if lower.endswith(VIDEO_EXTENSIONS):
+        resolved = resolve_video_file_path(src)
+        return os.path.isfile(os.path.abspath(str(resolved)))
+    return False
+
+
+def _normalize_camera_sources(data):
+    """Fix saved camera paths when the real file exists under a nearby name."""
+    changed = False
+    for i, cam in enumerate(data.get("cameras", [])):
+        source = cam.get("source")
+        if not isinstance(source, str):
+            continue
+        if not source.strip().lower().endswith(VIDEO_EXTENSIONS):
+            continue
+        resolved = resolve_video_file_path(source)
+        if resolved != source and os.path.isfile(str(resolved)):
+            data["cameras"][i]["source"] = str(resolved)
+            changed = True
+    if changed:
+        _save(data)
+    return data
+
+
+def sync_demo_cameras_from_config():
+    """Register/update demo cameras from config.py DEMO_CAMERAS."""
+    try:
+        from config import DEMO_CAMERAS
+    except ImportError:
+        return
+
+    if not DEMO_CAMERAS:
+        return
+
     data = _load()
-    return list(data.get("cameras", []))
+    by_location = {(c.get("location_name") or "").strip(): c for c in data.get("cameras", [])}
+    for cam in DEMO_CAMERAS:
+        loc = (cam.get("location_name") or "").strip()
+        name = (cam.get("name") or "Camera").strip()
+        src = cam.get("source", "")
+        if not loc:
+            continue
+        if loc in by_location:
+            save_camera(
+                by_location[loc]["id"],
+                name=name,
+                source=src,
+                location_name=loc,
+            )
+        else:
+            save_camera(None, name=name, source=src, location_name=loc)
+
+
+def get_cameras():
+    """Return list of cameras (id, name, source, location_name, has_video_source)."""
+    data = _normalize_camera_sources(_load())
+    cameras = []
+    for cam in data.get("cameras", []):
+        entry = dict(cam)
+        source = entry.get("source")
+        if isinstance(source, str) and source.strip().lower().endswith(VIDEO_EXTENSIONS):
+            entry["source"] = str(resolve_video_file_path(source))
+        entry["has_video_source"] = camera_has_video_source(entry)
+        cameras.append(entry)
+    return cameras
 
 def get_camera(camera_id):
-    data = _load()
+    data = _normalize_camera_sources(_load())
     for c in data.get("cameras", []):
         if (c.get("id") or "") == camera_id:
-            return c
+            cam = dict(c)
+            source = cam.get("source")
+            if isinstance(source, str) and source.strip().lower().endswith(VIDEO_EXTENSIONS):
+                cam["source"] = str(resolve_video_file_path(source))
+            return cam
     return None
 
 def save_camera(camera_id=None, name="", source=0, location_name=""):
@@ -140,3 +256,14 @@ def get_policies_for_camera(camera_id):
         return None
     cam["areas"] = get_areas(camera_id)
     return cam
+
+
+def get_areas_for_location(location_name):
+    """Return area rules for the camera registered at this location name."""
+    loc = (location_name or "").strip()
+    if not loc:
+        return []
+    for cam in get_cameras():
+        if (cam.get("location_name") or "").strip() == loc:
+            return get_areas(cam.get("id") or "")
+    return []

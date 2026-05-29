@@ -191,16 +191,24 @@ def api_rule_types():
 
 @app.route("/api/camera-policies/cameras", methods=["GET", "POST"])
 def api_cameras():
+    if request.method == "GET":
+        if not session.get("user"):
+            return jsonify({"error": "Not logged in"}), 401
+        return jsonify(cam_policies.get_cameras())
     err, code = require_admin()
     if err is not None:
         return err, code
-    if request.method == "GET":
-        return jsonify(cam_policies.get_cameras())
     data = request.get_json(silent=True) or {}
     cam_id = data.get("id") or None
     name = (data.get("name") or "").strip()
     source = data.get("source", 0)
     location_name = (data.get("location_name") or "").strip()
+    probe = {"source": source}
+    if isinstance(source, str) and source.strip() and not source.strip().lower().startswith(("http://", "https://", "rtsp://")):
+        if source.strip().lower().endswith(cam_policies.VIDEO_EXTENSIONS) and not cam_policies.camera_has_video_source(probe):
+            return jsonify({
+                "error": f"Video file not found: {source}. Check the path and filename (e.g. sample_video3.mp4).",
+            }), 400
     new_id = cam_policies.save_camera(cam_id, name=name, source=source, location_name=location_name)
     return jsonify({"ok": True, "id": new_id})
 
@@ -245,6 +253,38 @@ def api_delete_area(area_id):
     cam_policies.delete_area(area_id or "")
     return jsonify({"ok": True})
 
+@app.route("/camera-media/<camera_id>")
+def serve_camera_media(camera_id):
+    """Serve a camera's configured video file for All Cameras preview."""
+    if not session.get("user"):
+        return jsonify({"error": "Not logged in"}), 401
+    cam = cam_policies.get_camera(camera_id or "")
+    if not cam:
+        return jsonify({"error": "Not found"}), 404
+    source = str(cam.get("source") or "")
+    if not source.lower().endswith((".mp4", ".avi", ".webm", ".mov", ".mkv")):
+        return jsonify({"error": "No video source configured"}), 404
+    filepath = os.path.abspath(source)
+    if not os.path.isfile(filepath):
+        return jsonify({"error": "Video file not found"}), 404
+    if filepath.lower().endswith(".mp4"):
+        mime = "video/mp4"
+    elif filepath.lower().endswith(".webm"):
+        mime = "video/webm"
+    elif filepath.lower().endswith(".mov"):
+        mime = "video/quicktime"
+    elif filepath.lower().endswith(".mkv"):
+        mime = "video/x-matroska"
+    else:
+        mime = "video/x-msvideo"
+    return send_file(
+        filepath,
+        mimetype=mime,
+        as_attachment=False,
+        conditional=True,
+        etag=False,
+    )
+
 @app.route("/violations/<path:filename>")
 def serve_violation_file(filename):
     """Serve a violation image from DB or a clip from disk, with location access checks."""
@@ -259,15 +299,24 @@ def serve_violation_file(filename):
 
     if (violation.get("image") or "") == filename:
         blob, mime_type = vlog.get_violation_image_blob(filename)
-        if not blob:
-            return jsonify({"error": "Image not found in database"}), 404
-        return send_file(
-            io.BytesIO(blob),
-            mimetype=mime_type or "image/jpeg",
-            download_name=filename,
-            as_attachment=False,
-            etag=False,
-        )
+        if blob:
+            return send_file(
+                io.BytesIO(blob),
+                mimetype=mime_type or "image/jpeg",
+                download_name=filename,
+                as_attachment=False,
+                etag=False,
+            )
+        filepath = os.path.join(vlog.VIOLATIONS_DIR, filename)
+        if os.path.isfile(filepath):
+            return send_file(
+                filepath,
+                mimetype=mime_type or "image/jpeg",
+                download_name=filename,
+                as_attachment=False,
+                etag=False,
+            )
+        return jsonify({"error": "Image not found"}), 404
 
     filepath = os.path.join(vlog.VIOLATIONS_DIR, filename)
     if not os.path.isfile(filepath):
@@ -293,5 +342,15 @@ def serve_violation_file(filename):
     return jsonify({"error": "Unsupported file type"}), 400
 
 if __name__ == "__main__":
+    cam_policies.sync_demo_cameras_from_config()
+    sync_result = vlog.sync_violations_from_disk()
+    if sync_result.get("imported") or sync_result.get("updated"):
+        print(
+            f"Synced violations from disk: imported={sync_result.get('imported', 0)}, "
+            f"clips_updated={sync_result.get('updated', 0)}"
+        )
+    filled = vlog.backfill_violation_metadata()
+    if filled:
+        print(f"Updated violation labels for {filled} record(s).")
     print("PPE Violations Dashboard: http://127.0.0.1:5000 (login required)")
     app.run(host="0.0.0.0", port=5000, debug=False)
