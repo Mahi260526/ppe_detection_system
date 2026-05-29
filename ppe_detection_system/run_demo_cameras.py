@@ -67,7 +67,10 @@ if __name__ == "__main__":
         print("No valid video files found. Check paths in config.py -> DEMO_CAMERAS.")
         raise SystemExit(1)
 
-    print(f"Starting {len(valid_cams)} video(s) in parallel...\n")
+    print(f"Starting {len(valid_cams)} video(s) in parallel (one Python process per video)...\n")
+    for cam in valid_cams:
+        print(f"  - {cam.get('name')}: {cam.get('source')} -> {cam.get('location_name')}")
+    print()
     with mp.Pool(processes=len(valid_cams)) as pool:
         results = pool.map(_process_camera_worker, valid_cams)
 

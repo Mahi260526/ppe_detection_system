@@ -98,7 +98,9 @@ from config import (
     CLIP_POST_SEC,
 )
 import os
+import re
 import time
+import uuid
 import queue
 import threading
 import ctypes
@@ -498,6 +500,24 @@ def refresh_reported_and_check_same(person_detection, reported_list, frame_width
 
     return updated, same_person
 
+def _unique_violation_basename(location=None, extra_label=""):
+    """Unique filename for parallel demo cameras and re-runs (avoids DB UNIQUE on image)."""
+    now = datetime.now()
+    loc = re.sub(r"[^A-Za-z0-9]+", "_", (location or "site").strip()).strip("_")[:16] or "site"
+    parts = [
+        "violation",
+        now.strftime("%Y-%m-%d_%H-%M-%S"),
+        f"{now.microsecond:06d}",
+        loc,
+        uuid.uuid4().hex[:6],
+    ]
+    if extra_label:
+        safe = re.sub(r"[^A-Za-z0-9]+", "_", str(extra_label).strip()).strip("_")[:12]
+        if safe:
+            parts.insert(-1, safe)
+    return "_".join(parts) + ".jpg"
+
+
 def save_violation_image(
     annotated_frame,
     no_helmet=False,
@@ -514,15 +534,14 @@ def save_violation_image(
     os.makedirs(out_dir, exist_ok=True)
     now = datetime.now()
     date_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    base = now.strftime("%Y-%m-%d_%H-%M-%S")
-    if extra_label:
-        base = f"{base}_{extra_label}"
-    filename = os.path.join(out_dir, f"violation_{base}.jpg")
-    if os.path.exists(filename):
-        n = 1
-        while os.path.exists(filename):
-            filename = os.path.join(out_dir, f"violation_{base}_{n:03d}.jpg")
-            n += 1
+    active_loc = location if location is not None else LOCATION_NAME
+    basename = _unique_violation_basename(active_loc, extra_label=extra_label)
+    filename = os.path.join(out_dir, basename)
+    n = 1
+    while os.path.exists(filename):
+        stem, ext = os.path.splitext(basename)
+        filename = os.path.join(out_dir, f"{stem}_{n:03d}{ext}")
+        n += 1
     img = annotated_frame.copy()
     h, w = img.shape[:2]
     cv2.putText(img, date_time_str, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -551,8 +570,10 @@ def save_violation_image(
             tags.append("No Mask")
         if tags:
             cv2.putText(img, " | ".join(tags), (10, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
-    cv2.imwrite(filename, img)
+    if not cv2.imwrite(filename, img):
+        print(f"Warning: could not write violation snapshot to {filename}")
     basename = os.path.basename(filename)
+    clip_basename = os.path.splitext(basename)[0] + "_clip.mp4"
     from violations_log import build_violation_summary
 
     vlog.add_violation(
@@ -563,13 +584,14 @@ def save_violation_image(
         no_glasses=no_glasses,
         no_mask=no_mask,
         person_detected=person_detected,
-        location=location if location is not None else LOCATION_NAME,
+        location=active_loc,
+        clip=clip_basename,
         image_path=filename,
         violation_summary=build_violation_summary(
             no_helmet, no_vest, no_glasses, no_mask, person_detected
         ),
     )
-    return filename, date_time_str, basename
+    return filename, date_time_str, basename, clip_basename
 
 def _write_clip_thread(pre_frames, clip_path, post_queue, width, height, fps, post_sec, image_basename, clip_basename):
     """Background thread: write pre_frames then post_queue frames to clip_path, then update violation."""
@@ -1004,7 +1026,7 @@ def main(source=None, location_name=None, show_gui=None, model=None):
                 if same_person_still_in_frame:
                     pass  # Same person still in frame – don't report again until they leave and come back
                 else:
-                    path, dt_str, basename = save_violation_image(
+                    path, dt_str, basename, clip_basename = save_violation_image(
                         annotated_frame,
                         no_helmet=no_helmet,
                         no_vest=no_vest,
@@ -1027,8 +1049,6 @@ def main(source=None, location_name=None, show_gui=None, model=None):
                     if clip_post_state["queue"] is None and len(clip_buffer) > 0:
                         import violations_log as vlog
                         pre_frames = list(clip_buffer)
-                        base = os.path.splitext(basename)[0]
-                        clip_basename = base + "_clip.mp4"
                         clip_path = os.path.join(vlog.VIOLATIONS_DIR, clip_basename)
                         os.makedirs(vlog.VIOLATIONS_DIR, exist_ok=True)
                         post_q = queue.Queue(maxsize=0)  # unbounded so we don't drop frames

@@ -199,18 +199,108 @@ def api_cameras():
     if err is not None:
         return err, code
     data = request.get_json(silent=True) or {}
-    cam_id = data.get("id") or None
+    cam_id = (data.get("id") or data.get("camera_id") or "").strip() or None
+
+    if data.get("clear_all_camera_details"):
+        results = cam_policies.reset_all_cameras_detail()
+        return jsonify({"ok": True, "cleared": results})
+
+    if data.get("clear_camera_detail"):
+        if not cam_id:
+            return jsonify({"error": "Camera id is required"}), 400
+        result = cam_policies.reset_violations_history(cam_id)
+        if not result:
+            return jsonify({"error": "Camera not found"}), 404
+        return jsonify({"ok": True, **result})
+
+    hide_image = (data.get("hide_violation_image") or "").strip()
+    if data.get("hide_violation") and hide_image:
+        if not cam_id:
+            return jsonify({"error": "Camera id is required"}), 400
+        if not cam_policies.hide_violation_snapshot(cam_id, hide_image):
+            return jsonify({"error": "Camera not found"}), 404
+        cam = cam_policies.get_camera(cam_id)
+        return jsonify({
+            "ok": True,
+            "hidden_violation_images": (cam or {}).get("hidden_violation_images") or [],
+        })
+
     name = (data.get("name") or "").strip()
-    source = data.get("source", 0)
-    location_name = (data.get("location_name") or "").strip()
+    if cam_id and not name and "name" not in data and "source" not in data and "location_name" not in data:
+        return jsonify({"error": "Nothing to save"}), 400
+    source = data.get("source", 0) if "source" in data else None
+    location_name = (data.get("location_name") or "").strip() if "location_name" in data else None
+    if cam_id and source is None and location_name is None and not name:
+        return jsonify({"error": "Nothing to save"}), 400
+    if source is None:
+        existing = cam_policies.get_camera(cam_id)
+        source = existing.get("source", 0) if existing else 0
+    if location_name is None and cam_id:
+        existing = cam_policies.get_camera(cam_id)
+        location_name = (existing.get("location_name") or "") if existing else ""
+    elif location_name is None:
+        location_name = ""
     probe = {"source": source}
     if isinstance(source, str) and source.strip() and not source.strip().lower().startswith(("http://", "https://", "rtsp://")):
         if source.strip().lower().endswith(cam_policies.VIDEO_EXTENSIONS) and not cam_policies.camera_has_video_source(probe):
             return jsonify({
                 "error": f"Video file not found: {source}. Check the path and filename (e.g. sample_video3.mp4).",
             }), 400
-    new_id = cam_policies.save_camera(cam_id, name=name, source=source, location_name=location_name)
-    return jsonify({"ok": True, "id": new_id})
+    new_id, violations_reset = cam_policies.save_camera(
+        cam_id, name=name, source=source, location_name=location_name
+    )
+    return jsonify({"ok": True, "id": new_id, "violations_reset": violations_reset})
+
+@app.route("/api/camera-policies/cameras/<camera_id>/detail-violations")
+def api_camera_detail_violations(camera_id):
+    """Violations filtered for camera detail (respects clear/hide prefs)."""
+    if not session.get("user"):
+        return jsonify({"error": "Not logged in"}), 401
+    locations = get_user_locations()
+    violations = vlog.get_all_violations(locations)
+    cam = cam_policies.get_camera(camera_id or "")
+    visible = cam_policies.get_camera_detail_violations(camera_id or "", violations)
+    return jsonify({
+        "violations": visible,
+        "camera_id": camera_id,
+        "location": (cam or {}).get("location_name") or "",
+        "hidden_count": len((cam or {}).get("hidden_violation_images") or []),
+        "detail_violations_since": (cam or {}).get("detail_violations_since") or "",
+    })
+
+
+@app.route("/api/camera-policies/cameras/<camera_id>/reset-violations", methods=["POST"])
+def api_reset_camera_violations(camera_id):
+    err, code = require_admin()
+    if err is not None:
+        return err, code
+    result = cam_policies.reset_violations_history(camera_id or "")
+    if not result:
+        return jsonify({"error": "Camera not found"}), 404
+    return jsonify({
+        "ok": True,
+        "detail_violations_since": result.get("detail_violations_since") or "",
+        "location": result.get("location") or "",
+    })
+
+
+@app.route("/api/camera-policies/cameras/<camera_id>/hide-violation", methods=["POST"])
+def api_hide_camera_violation(camera_id):
+    err, code = require_admin()
+    if err is not None:
+        return err, code
+    data = request.get_json(silent=True) or {}
+    image = (data.get("image") or "").strip()
+    if not image:
+        return jsonify({"error": "image is required"}), 400
+    if not cam_policies.hide_violation_snapshot(camera_id or "", image):
+        return jsonify({"error": "Camera not found"}), 404
+    cam = cam_policies.get_camera(camera_id or "")
+    return jsonify({
+        "ok": True,
+        "hidden_violation_images": (cam or {}).get("hidden_violation_images") or [],
+    })
+
 
 @app.route("/api/camera-policies/cameras/<camera_id>", methods=["DELETE"])
 def api_delete_camera(camera_id):

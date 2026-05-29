@@ -112,9 +112,12 @@
     <h2 class="section-title">Cameras &amp; area-wise policies</h2>
     <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem;">Define cameras and, for each camera, define areas and what type of violation is generated in that area (PPE, person detected, person out of lane, vehicle detected).</p>
     <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
         <span class="section-title" style="margin: 0;">Cameras</span>
-        <button type="button" class="btn btn-primary" id="addCameraBtn">+ Add camera</button>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" class="btn" id="clearAllCameraDetailBtn">Clear ALL camera details</button>
+          <button type="button" class="btn btn-primary" id="addCameraBtn">+ Add camera</button>
+        </div>
       </div>
       <div id="camerasList">
         <div class="empty">Loading…</div>
@@ -204,6 +207,25 @@
       return d.innerHTML;
     }
 
+    function attrQuote(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;");
+    }
+
+    async function parseApiResponse(res) {
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (_) {
+        data = {};
+      }
+      const html404 = res.status === 404 && /<html/i.test(text);
+      return { data, text, html404 };
+    }
+
     async function loadRuleTypes() {
       const res = await fetch(API + "/api/camera-policies/rule-types", { credentials: "same-origin" });
       if (res.ok) ruleTypes = await res.json();
@@ -231,21 +253,34 @@
       cameras.forEach(c => {
         const areas = areasByCamera[c.id] || [];
         const areasSummary = areas.length ? areas.map(a => a.name + " (" + a.rule + ")").join(", ") : "—";
-        html += `<tr>
+        html += `<tr data-cam-id="${esc(c.id)}">
           <td>${esc(c.name)}</td>
           <td>${esc(String(c.source))}</td>
           <td>${esc(c.location_name || "—")}</td>
           <td style="max-width:280px; font-size:0.85rem;">${areas.length} area(s)</td>
-          <td>
-            <button type="button" class="btn" onclick="openAreasListModal('${esc(c.id)}', '${esc(c.name)}')">Manage areas</button>
-            <button type="button" class="btn" onclick="editCamera('${esc(c.id)}')">Edit</button>
-            <button type="button" class="btn btn-danger" onclick="deleteCamera('${esc(c.id)}', '${esc(c.name)}')">Delete</button>
+          <td class="camera-actions">
+            <button type="button" class="btn" data-action="areas" data-cam-id="${attrQuote(c.id)}" data-cam-name="${attrQuote(c.name)}">Manage areas</button>
+            <button type="button" class="btn" data-action="edit" data-cam-id="${attrQuote(c.id)}">Edit</button>
+            <button type="button" class="btn" data-action="hide-violations" data-cam-id="${attrQuote(c.id)}" data-cam-name="${attrQuote(c.name)}">Clear camera detail</button>
+            <button type="button" class="btn btn-danger" data-action="delete" data-cam-id="${attrQuote(c.id)}" data-cam-name="${attrQuote(c.name)}">Delete</button>
           </td>
         </tr>`;
       });
       html += "</tbody></table>";
       el.innerHTML = html;
     }
+
+    document.getElementById("camerasList").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const id = btn.getAttribute("data-cam-id") || "";
+      const name = btn.getAttribute("data-cam-name") || "";
+      const action = btn.getAttribute("data-action");
+      if (action === "areas") openAreasListModal(id, name);
+      else if (action === "edit") editCamera(id);
+      else if (action === "hide-violations") resetViolationHistory(id, name);
+      else if (action === "delete") deleteCamera(id, name);
+    });
 
     function openCameraModal(editId) {
       document.getElementById("cameraId").value = editId || "";
@@ -284,7 +319,49 @@
         alert(err.error || "Failed to save camera");
         return;
       }
+      const data = await res.json().catch(() => ({}));
+      if (data.violations_reset) {
+        alert(
+          "Video source updated. All Cameras and camera details will only show violations detected after this change."
+        );
+      }
       document.getElementById("cameraModal").style.display = "none";
+      loadCameras();
+    }
+
+    async function resetViolationHistory(id, name) {
+      id = (id || "").trim();
+      if (!id) {
+        alert("Camera id is missing. Refresh this page and try again.");
+        return;
+      }
+      if (!confirm(
+        "Clear camera detail for \"" + name + "\"?\n\n" +
+        "Snapshots and clips will be hidden from that camera's detail page only. " +
+        "The main dashboard violation table is not changed."
+      )) return;
+      const res = await fetch(API + "/api/camera-policies/cameras", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, clear_camera_detail: true }),
+      });
+      const { data, html404 } = await parseApiResponse(res);
+      if (!res.ok) {
+        let msg = data.error || ("Request failed (" + res.status + ").");
+        if (html404) {
+          msg = "Server is running old code. Stop server.py (Ctrl+C in its terminal), then run: python server.py";
+        } else if (res.status === 403) {
+          msg = "Admin login required.";
+        }
+        alert("Could not clear camera detail: " + msg);
+        return;
+      }
+      alert(
+        "Done. Camera detail for " + (data.location || "this camera") + " is cleared from " +
+        (data.detail_violations_since || "now") + " onward.\n\n" +
+        "Open that camera on the dashboard (or click Refresh) to see the change."
+      );
       loadCameras();
     }
 
@@ -381,6 +458,30 @@
     }
 
     document.getElementById("addCameraBtn").onclick = () => openCameraModal();
+    document.getElementById("clearAllCameraDetailBtn").onclick = async () => {
+      if (!confirm(
+        "Clear snapshots on every camera detail page?\n\n" +
+        "The main dashboard violation table is not changed."
+      )) return;
+      const res = await fetch(API + "/api/camera-policies/cameras", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_all_camera_details: true }),
+      });
+      const { data, html404 } = await parseApiResponse(res);
+      if (!res.ok) {
+        let msg = data.error || ("Request failed (" + res.status + ").");
+        if (html404) {
+          msg = "Restart server.py (Ctrl+C), then run: python server.py";
+        }
+        alert("Could not clear: " + msg);
+        return;
+      }
+      const n = (data.cleared || []).length;
+      alert("Done. Cleared camera detail for " + n + " camera(s). Refresh the dashboard to see the change.");
+      loadCameras();
+    };
     document.getElementById("closeCameraModal").onclick = () => { document.getElementById("cameraModal").style.display = "none"; };
     document.getElementById("saveCameraBtn").onclick = saveCamera;
     document.getElementById("addAreaFromListBtn").onclick = () => {

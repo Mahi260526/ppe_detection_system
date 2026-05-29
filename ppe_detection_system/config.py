@@ -6,17 +6,23 @@ VIDEO_SOURCE = r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4"  # recorded 
 # Location name for this camera/source (used for filtering by user-assigned locations)
 LOCATION_NAME = "Main Gate"
 
-# Two demo cameras for All Cameras dashboard (run: python run_demo_cameras.py)
+# Demo cameras for parallel processing (run: python run_demo_cameras.py)
+# Each entry = one process. Use a unique location_name per video.
 DEMO_CAMERAS = [
     {
         "name": "Camera 1",
         "location_name": "Site A",
-        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4",
+        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video7.mp4",
     },
     {
         "name": "Camera 2",
         "location_name": "Site B",
-        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video3.mp4",
+        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video6.mp4",
+    },
+    {
+        "name": "Camera 3",
+        "location_name": "Site C",
+        "source": r"C:\Users\Mahi Agrawal\Downloads\sample_video4.mp4",
     },
 ]
 

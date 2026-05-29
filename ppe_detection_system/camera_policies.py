@@ -5,7 +5,10 @@ Each camera can have multiple areas; each area has a rule type that defines what
 import os
 import json
 import uuid
+from datetime import datetime
 from threading import Lock
+
+import camera_detail_prefs as detail_prefs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -43,6 +46,19 @@ def _save(data):
 
 def get_rule_types():
     return list(RULE_TYPES)
+
+
+def _source_identity(source):
+    """Normalize source for change detection (file path, URL, or webcam index)."""
+    if source is None:
+        return ""
+    if isinstance(source, (int, float)):
+        return f"index:{int(source)}"
+    return str(source).strip()
+
+
+def _now_violations_cutoff():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".webm", ".mov", ".mkv")
 
@@ -138,14 +154,9 @@ def sync_demo_cameras_from_config():
         if not loc:
             continue
         if loc in by_location:
-            save_camera(
-                by_location[loc]["id"],
-                name=name,
-                source=src,
-                location_name=loc,
-            )
-        else:
-            save_camera(None, name=name, source=src, location_name=loc)
+            # Keep existing camera source and violation history (Camera Setup is authoritative).
+            continue
+        save_camera(None, name=name, source=src, location_name=loc)
 
 
 def get_cameras():
@@ -158,7 +169,7 @@ def get_cameras():
         if isinstance(source, str) and source.strip().lower().endswith(VIDEO_EXTENSIONS):
             entry["source"] = str(resolve_video_file_path(source))
         entry["has_video_source"] = camera_has_video_source(entry)
-        cameras.append(entry)
+        cameras.append(detail_prefs.merge_into_camera(entry))
     return cameras
 
 def get_camera(camera_id):
@@ -169,35 +180,109 @@ def get_camera(camera_id):
             source = cam.get("source")
             if isinstance(source, str) and source.strip().lower().endswith(VIDEO_EXTENSIONS):
                 cam["source"] = str(resolve_video_file_path(source))
-            return cam
+            return detail_prefs.merge_into_camera(cam)
     return None
 
 def save_camera(camera_id=None, name="", source=0, location_name=""):
-    """Create or update camera. source can be int (index) or string (URL). Returns camera id."""
+    """
+    Create or update camera. source can be int (index) or string (URL).
+    Returns (camera_id, violations_reset) where violations_reset is True when
+    the video source changed and old violations should be hidden for this camera.
+    """
     data = _load()
     cameras = list(data.get("cameras", []))
+    new_source = source if isinstance(source, (int, float)) else str(source)
     if camera_id:
         for i, c in enumerate(cameras):
             if (c.get("id") or "") == camera_id:
+                old_source = c.get("source")
+                violations_since = (c.get("violations_since") or "").strip()
+                source_changed = _source_identity(old_source) != _source_identity(new_source)
+                if source_changed:
+                    violations_since = _now_violations_cutoff()
                 cameras[i] = {
                     "id": camera_id,
                     "name": (name or "").strip() or c.get("name", ""),
-                    "source": source if isinstance(source, (int, float)) else str(source),
+                    "source": new_source,
                     "location_name": (location_name or "").strip() or c.get("location_name", ""),
+                    "violations_since": violations_since,
+                    "detail_violations_since": (
+                        _now_violations_cutoff() if source_changed
+                        else (c.get("detail_violations_since") or "").strip()
+                    ),
+                    "hidden_violation_images": list(c.get("hidden_violation_images") or []),
                 }
                 data["cameras"] = cameras
                 _save(data)
-                return camera_id
+                return camera_id, source_changed
     new_id = "cam_" + uuid.uuid4().hex[:8]
     cameras.append({
         "id": new_id,
         "name": (name or "").strip() or "Camera",
-        "source": source if isinstance(source, (int, float)) else str(source),
+        "source": new_source,
         "location_name": (location_name or "").strip() or "",
+        "violations_since": _now_violations_cutoff(),
+        "detail_violations_since": "",
+        "hidden_violation_images": [],
     })
     data["cameras"] = cameras
     _save(data)
-    return new_id
+    return new_id, True
+
+def _camera_index(cameras, camera_id):
+    cid = (camera_id or "").strip()
+    if not cid:
+        return -1
+    for i, c in enumerate(cameras):
+        if (c.get("id") or "").strip() == cid:
+            return i
+    return -1
+
+
+def reset_violations_history(camera_id):
+    """
+    Clear camera detail only: hide existing snapshots/clips from that view.
+    Does not delete rows from the violations database or dashboard table.
+    """
+    data = _load()
+    cameras = list(data.get("cameras", []))
+    i = _camera_index(cameras, camera_id)
+    if i < 0:
+        return None
+    loc = (cameras[i].get("location_name") or "").strip()
+    return detail_prefs.clear_camera_detail(camera_id, loc)
+
+
+def reset_all_cameras_detail():
+    """Clear camera detail view for every registered camera."""
+    return detail_prefs.clear_all_camera_details(_load().get("cameras", []))
+
+
+def hide_violation_snapshot(camera_id, image_basename):
+    """Hide one snapshot/clip pair from camera detail only (not deleted from DB)."""
+    return detail_prefs.hide_snapshot(camera_id, image_basename)
+
+
+def get_camera_detail_violations(camera_id, violations=None):
+    """Violations for camera detail page only (hidden snapshots excluded)."""
+    import violations_log as vlog
+
+    cam = get_camera(camera_id)
+    if not cam:
+        return []
+    loc = (cam.get("location_name") or "").strip()
+    if violations is None:
+        violations = vlog.get_all_violations(None)
+    rows = [
+        v
+        for v in violations
+        if (v.get("location") or "").strip() == loc
+    ]
+    cam_since = (cam.get("violations_since") or "").strip()
+    if cam_since:
+        rows = [v for v in rows if detail_prefs._violation_on_or_after(v.get("datetime"), cam_since)]
+    return detail_prefs.filter_violations_for_detail(camera_id, rows)
+
 
 def delete_camera(camera_id):
     """Remove camera and all its areas."""

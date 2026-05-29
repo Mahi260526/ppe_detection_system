@@ -192,6 +192,43 @@
       margin: 0 0 0.8rem;
       font-size: 1rem;
     }
+    .safety-intro {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      margin: 0 0 1rem;
+      max-width: 920px;
+    }
+    .safety-table-wrap { overflow-x: auto; }
+    .safety-table-wrap table {
+      font-size: 0.86rem;
+      table-layout: fixed;
+      width: 100%;
+    }
+    .safety-table-wrap th,
+    .safety-table-wrap td {
+      vertical-align: top;
+      line-height: 1.45;
+      white-space: normal;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      padding: 0.65rem 0.85rem;
+    }
+    .safety-table-wrap th {
+      font-size: 0.76rem;
+    }
+    .safety-table-wrap .col-equip { width: 22%; }
+    .safety-table-wrap .col-risks { width: 44%; }
+    .safety-table-wrap .col-response { width: 34%; }
+    .safety-table-wrap td ul {
+      margin: 0;
+      padding-left: 1.1rem;
+    }
+    .safety-table-wrap td li { margin-bottom: 0.35rem; }
+    .safety-table-wrap .equip-name {
+      font-weight: 600;
+      color: #e6edf3;
+    }
     .grid {
       display: grid;
       gap: 0.75rem;
@@ -350,6 +387,23 @@
       object-fit: cover;
       display: block;
     }
+    .snapshot-media-link {
+      display: block;
+      cursor: zoom-in;
+      text-decoration: none;
+      color: inherit;
+    }
+    .snapshot-media-link:hover img {
+      opacity: 0.92;
+    }
+    .snapshot-open-tab {
+      display: inline-block;
+      margin: 0.2rem 0.55rem 0.35rem;
+      font-size: 0.72rem;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .snapshot-open-tab:hover { text-decoration: underline; }
     .snapshot video {
       width: 100%;
       height: 140px;
@@ -357,11 +411,53 @@
       display: block;
       background: #0a1018;
     }
+    .snapshot .snapshot-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin: 0.35rem 0.55rem 0.1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
     .snapshot-meta {
       padding: 0.45rem 0.55rem;
       font-size: 0.76rem;
       color: var(--muted);
     }
+    .snapshot-actions {
+      margin-top: 0.4rem;
+    }
+    .btn-hide-snapshot {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .btn-hide-snapshot:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    .camera-detail-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+    }
+    .camera-detail-head h3 { margin: 0; }
+    .btn-clear-detail {
+      font-size: 0.8rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--bg-panel);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .btn-clear-detail:hover { border-color: var(--muted); }
     .hidden { display: none !important; }
     .empty {
       color: var(--muted);
@@ -481,7 +577,10 @@
 
       <section id="view-camera-detail" class="hidden">
         <div class="section">
-          <h3 id="cameraDetailTitle">Camera Detail</h3>
+          <div class="camera-detail-head">
+            <h3 id="cameraDetailTitle">Camera Detail</h3>
+            <button type="button" id="clearCameraDetailBtn" class="btn-clear-detail hidden" title="Hide all snapshots on this page only">Clear all snapshots</button>
+          </div>
           <div id="cameraViolationsWrap" class="empty">Loading violations...</div>
         </div>
         <div class="section">
@@ -494,38 +593,97 @@
 
       <section id="view-safety-checks" class="hidden">
         <div class="section">
-          <h3>Safety Checks: what happens on violation</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Violation</th>
-                <th>Immediate Action</th>
-                <th>Likely Causes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>No Helmet</td>
-                <td>Raise alert, capture snapshot + clip, notify supervisor</td>
-                <td>Missing PPE issue, heat discomfort, poor supervision</td>
-              </tr>
-              <tr>
-                <td>No Vest</td>
-                <td>Raise alert, check visibility zones, log non-compliance</td>
-                <td>Shift change, unavailable vest size, worker negligence</td>
-              </tr>
-              <tr>
-                <td>No Mask</td>
-                <td>Raise alert, enforce respiratory PPE in dusty areas</td>
-                <td>Low awareness, discomfort, stock shortage</td>
-              </tr>
-              <tr>
-                <td>No Glasses</td>
-                <td>Raise alert, inspect eye-risk task zones</td>
-                <td>Improper fit, fogging complaints, weak compliance</td>
-              </tr>
-            </tbody>
-          </table>
+          <h3>Safety Checks — PPE non-compliance</h3>
+          <p class="safety-intro">
+            When workers do not wear required safety equipment, the risk of injury increases and the site may face regulatory penalties.
+            Below is what can happen if equipment is not worn, and how this system responds when a violation is detected.
+          </p>
+          <div class="safety-table-wrap table-scroll">
+            <table>
+              <colgroup>
+                <col class="col-equip">
+                <col class="col-risks">
+                <col class="col-response">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Equipment / violation</th>
+                  <th>What can happen if not worn</th>
+                  <th>System response</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="equip-name">Helmet (hard hat)</span><br><span style="color:var(--muted);font-size:0.8rem;">No Helmet</span></td>
+                  <td>
+                    <ul>
+                      <li>Head injury from falling objects or low clearance</li>
+                      <li>Serious trauma on slips, trips, or vehicle contact</li>
+                      <li>Fatality risk in construction and industrial zones</li>
+                    </ul>
+                  </td>
+                  <td>Alert raised, snapshot and video clip saved, supervisor notified, violation logged on dashboard.</td>
+                </tr>
+                <tr>
+                  <td><span class="equip-name">High-visibility vest</span><br><span style="color:var(--muted);font-size:0.8rem;">No Vest</span></td>
+                  <td>
+                    <ul>
+                      <li>Worker not seen by plant operators or vehicles</li>
+                      <li>Higher chance of strike-by / run-over incidents</li>
+                      <li>Non-compliance with site visibility rules</li>
+                    </ul>
+                  </td>
+                  <td>Alert raised, visibility zone checked, non-compliance logged with date, time, and camera location.</td>
+                </tr>
+                <tr>
+                  <td><span class="equip-name">Safety mask / respirator</span><br><span style="color:var(--muted);font-size:0.8rem;">No Mask</span></td>
+                  <td>
+                    <ul>
+                      <li>Inhalation of dust, silica, fumes, or chemicals</li>
+                      <li>Long-term lung disease and acute exposure illness</li>
+                      <li>Regulatory breach in designated respiratory zones</li>
+                    </ul>
+                  </td>
+                  <td>Alert raised, respiratory PPE enforced in mapped areas, violation recorded for safety review.</td>
+                </tr>
+                <tr>
+                  <td><span class="equip-name">Safety glasses / goggles</span><br><span style="color:var(--muted);font-size:0.8rem;">No Glasses</span></td>
+                  <td>
+                    <ul>
+                      <li>Eye injury from sparks, chips, dust, or splashes</li>
+                      <li>Permanent vision damage or loss</li>
+                      <li>Incidents during welding, cutting, and chemical handling</li>
+                    </ul>
+                  </td>
+                  <td>Alert raised, eye-risk zones flagged, snapshot stored for investigation and training.</td>
+                </tr>
+                <tr>
+                  <td><span class="equip-name">Restricted area entry</span><br><span style="color:var(--muted);font-size:0.8rem;">Person detected in zone</span></td>
+                  <td>
+                    <ul>
+                      <li>Exposure to moving equipment, falls, or live work</li>
+                      <li>Collision with vehicles or machinery</li>
+                      <li>Breach of permit-to-work or exclusion rules</li>
+                    </ul>
+                  </td>
+                  <td>Immediate alert, person-in-zone violation logged; no PPE check until area rule is set to PPE mode.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="section">
+          <h3>How to reduce these violations on site</h3>
+          <p class="safety-intro" style="margin-bottom:0.5rem;">
+            Recommended actions to reduce violations on site:
+          </p>
+          <ul class="safety-intro" style="padding-left:1.2rem;">
+            <li>Ensure PPE is available at every entry, in all sizes, and replaced when damaged.</li>
+            <li>Brief every shift on which zones require helmet, vest, mask, and eye protection.</li>
+            <li>Use camera area rules in <strong>Camera Setup</strong> so violations match real site zones.</li>
+            <li>Review dashboard violations weekly with crew leads and correct repeat issues.</li>
+            <li>Pair detection alerts with on-the-spot correction, not only disciplinary action.</li>
+          </ul>
         </div>
       </section>
 
@@ -559,6 +717,7 @@
     const API = "";
     let cameras = [];
     let allViolations = [];
+    let isAdminUser = false;
     let violations = [];
     let currentCameraId = "";
     let activeView = "dashboard-2";
@@ -587,19 +746,40 @@
       return counts;
     }
 
+    function cutoffForLocation(location) {
+      const loc = (location || "").trim();
+      if (!loc) return "";
+      const related = cameras.filter(c => (c.location_name || "").trim() === loc);
+      let latest = "";
+      for (const c of related) {
+        const s = (c.violations_since || "").trim();
+        if (s && (!latest || s > latest)) latest = s;
+      }
+      return latest;
+    }
+
+    function violationPassesCameraCutoff(v) {
+      const since = cutoffForLocation(v.location);
+      if (!since) return true;
+      return violationOnOrAfter(v, since);
+    }
+
     function getFilteredViolations() {
       const fromInput = document.getElementById("violationDateFrom");
       const toInput = document.getElementById("violationDateTo");
       const from = fromInput ? fromInput.value : "";
       const to = toInput ? toInput.value : "";
-      if (!from && !to) return allViolations.slice();
-      return allViolations.filter(v => {
-        const d = violationDateKey(v);
-        if (!d) return false;
-        if (from && d < from) return false;
-        if (to && d > to) return false;
-        return true;
-      });
+      let list = allViolations.slice();
+      if (from || to) {
+        list = list.filter(v => {
+          const d = violationDateKey(v);
+          if (!d) return false;
+          if (from && d < from) return false;
+          if (to && d > to) return false;
+          return true;
+        });
+      }
+      return list.filter(violationPassesCameraCutoff);
     }
 
     function syncViolationDateInputBounds() {
@@ -702,9 +882,40 @@
       return tags.join(" ") || '<span class="badge b-helmet">Violation</span>';
     }
 
+    function violationOnOrAfter(v, sinceStr) {
+      const dt = String(v.datetime || "").trim().replace("T", " ");
+      const since = String(sinceStr || "").trim().replace("T", " ");
+      if (!since) return true;
+      if (!dt) return false;
+      return dt >= since;
+    }
+
+    function violationHiddenFromDetail(camera, v) {
+      const img = (v.image || "").trim();
+      if (!img) return false;
+      const hidden = new Set((camera.hidden_violation_images || []).map(h => String(h).trim()).filter(Boolean));
+      return hidden.has(img);
+    }
+
+    /** Violations for one camera; hides rows from before the current video source was set. */
     function byCamera(camera) {
       const location = (camera.location_name || "").trim();
-      return violations.filter(v => (v.location || "").trim() === location);
+      const since = (camera.violations_since || "").trim();
+      return allViolations.filter(v => {
+        if ((v.location || "").trim() !== location) return false;
+        if (since && !violationOnOrAfter(v, since)) return false;
+        return true;
+      });
+    }
+
+    /** Same as byCamera but hides older rows / per-snapshot hides for camera detail only. */
+    function byCameraDetail(camera) {
+      const detailSince = (camera.detail_violations_since || "").trim();
+      return byCamera(camera).filter(v => {
+        if (detailSince && !violationOnOrAfter(v, detailSince)) return false;
+        if (violationHiddenFromDetail(camera, v)) return false;
+        return true;
+      });
     }
 
     function cameraHasVideoSource(camera) {
@@ -726,8 +937,16 @@
       return null;
     }
 
+    function detailViolationCount(camera) {
+      return byCameraDetail(camera).length;
+    }
+
+    function detailSnapshotCount(camera) {
+      return byCameraDetail(camera).filter(v => (v.image || "").trim()).length;
+    }
+
     function activeStatus(camera) {
-      const list = byCamera(camera);
+      const list = byCameraDetail(camera);
       if (cameraSourceUrl(camera)) {
         return { label: list.length ? "Active" : "Ready", cls: "live" };
       }
@@ -783,7 +1002,7 @@
         return;
       }
       el.innerHTML = cameras.map((c, idx) => {
-        const list = byCamera(c);
+        const list = byCameraDetail(c);
         const latest = list[0];
         const status = activeStatus(c);
         const mediaHtml = cameraCardMediaHtml(c, latest);
@@ -811,8 +1030,9 @@
         return;
       }
       const rows = cameras.map((c, idx) => {
-        const list = byCamera(c);
         const status = activeStatus(c);
+        const detailViolations = detailViolationCount(c);
+        const detailSnapshots = detailSnapshotCount(c);
         return `
           <tr>
             <td>${idx + 1}</td>
@@ -820,16 +1040,19 @@
             <td>${esc(c.name || "Camera")}</td>
             <td>${esc(c.location_name || "—")}</td>
             <td><span class="dot ${status.cls}"></span>${status.label}</td>
-            <td>${list.length}</td>
-            <td>${list.length}</td>
+            <td>${detailViolations}</td>
+            <td>${detailSnapshots}</td>
           </tr>
         `;
       }).join("");
       el.innerHTML = `
+        <p class="table-hint" style="font-size:0.8rem;color:var(--muted);margin:0 0 0.5rem;">
+          Violation and snapshot counts match what you see in <strong>Camera Detail</strong> (cleared items are excluded). The main Dashboard table still shows all logged violations.
+        </p>
         <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Camera No</th><th>Camera ID</th><th>Name</th><th>Location</th><th>Status</th><th>Violations</th><th>Snapshots</th></tr>
+            <tr><th>Camera No</th><th>Camera ID</th><th>Name</th><th>Location</th><th>Status</th><th>Detail violations</th><th>Detail snapshots</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -1107,11 +1330,34 @@
       }
     }
 
-    function renderCameraDetailContent(camId) {
+    async function fetchCameraDetailViolations(camId) {
+      const res = await fetch(
+        API + "/api/camera-policies/cameras/" + encodeURIComponent(camId) + "/detail-violations",
+        { credentials: "same-origin" }
+      );
+      if (res.status === 404) {
+        const cam = cameras.find(c => String(c.id) === String(camId));
+        return cam ? byCameraDetail(cam) : [];
+      }
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.violations || [];
+    }
+
+    async function renderCameraDetailContent(camId) {
       const camera = cameras.find(c => String(c.id) === String(camId));
       if (!camera) return;
-      const list = byCamera(camera);
+      const list = await fetchCameraDetailViolations(camId);
       document.getElementById("cameraDetailTitle").textContent = `Camera ${camera.id} — ${camera.location_name || "Unknown location"}`;
+      const clearBtn = document.getElementById("clearCameraDetailBtn");
+      if (clearBtn) {
+        if (isAdminUser) {
+          clearBtn.classList.remove("hidden");
+          clearBtn.onclick = () => clearCameraDetailSnapshots(camId);
+        } else {
+          clearBtn.classList.add("hidden");
+        }
+      }
 
       const vioWrap = document.getElementById("cameraViolationsWrap");
       if (!list.length) {
@@ -1135,18 +1381,41 @@
 
       const snaps = document.getElementById("cameraSnapshots");
       if (!list.length) {
-        snaps.innerHTML = '<div class="empty">No snapshots.</div>';
+        snaps.innerHTML = '<div class="empty">No snapshots on this page. If <code>run_demo_cameras.py</code> is still running, new ones will appear here after a violation. Stop that script to keep this page empty.</div>';
       } else {
         snaps.innerHTML = list.map(v => {
-          const media = v.clip
-            ? `<video src="/violations/${encodeURIComponent(v.clip)}" controls preload="metadata" playsinline></video>`
-            : `<img src="/violations/${encodeURIComponent(v.image || "")}" alt="Violation snapshot">`;
+          const imgUrl = v.image
+            ? `/violations/${encodeURIComponent(v.image)}?v=${encodeURIComponent(v.datetime || "")}`
+            : "";
+          const imgOpenUrl = v.image ? `/violations/${encodeURIComponent(v.image)}` : "";
+          const clipOpenUrl = v.clip ? `/violations/${encodeURIComponent(v.clip)}` : "";
+          const imgHtml = v.image
+            ? `<div class="snapshot-label">Snapshot</div>
+               <a class="snapshot-media-link" href="${imgOpenUrl}" target="_blank" rel="noopener noreferrer" title="Open snapshot in new tab">
+                 <img src="${imgUrl}" alt="Violation snapshot" loading="lazy"
+                      onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'empty',textContent:'Snapshot could not load. Click Refresh or log in again.'}))">
+               </a>
+               <a class="snapshot-open-tab" href="${imgOpenUrl}" target="_blank" rel="noopener noreferrer">Open full size in new tab</a>`
+            : "";
+          const clipHtml = v.clip
+            ? `<div class="snapshot-label">Recorded video</div>
+               <video src="${clipOpenUrl}" controls preload="metadata" playsinline></video>
+               <a class="snapshot-open-tab" href="${clipOpenUrl}" target="_blank" rel="noopener noreferrer">Open video in new tab</a>`
+            : "";
+          const hideBtn = isAdminUser && v.image
+            ? `<div class="snapshot-actions">
+                 <button type="button" class="btn-hide-snapshot" data-hide-image="${esc(v.image)}"
+                   title="Hide this snapshot and clip from camera detail only">Hide</button>
+               </div>`
+            : "";
           return `
-            <article class="snapshot">
-              ${media}
+            <article class="snapshot" data-violation-image="${esc(v.image || "")}">
+              ${imgHtml}
+              ${clipHtml}
               <div class="snapshot-meta">
                 <div><strong>${esc(v.datetime || "—")}</strong></div>
                 <div>${violationBadges(v)}</div>
+                ${hideBtn}
               </div>
             </article>
           `;
@@ -1154,12 +1423,113 @@
       }
     }
 
-    function openCameraDetail(camId) {
+    async function refreshViolationsFromServer() {
+      const vioRes = await fetch(API + "/api/violations", { credentials: "same-origin" });
+      allViolations = vioRes.ok ? await vioRes.json() : [];
+      violations = getFilteredViolations();
+    }
+
+    async function refreshCamerasFromServer() {
+      const camRes = await fetch(API + "/api/camera-policies/cameras", { credentials: "same-origin" });
+      const allCameras = camRes.ok ? await camRes.json() : [];
+      cameras = allCameras.filter(c => c.has_video_source === true);
+    }
+
+    async function clearCameraDetailSnapshots(camId) {
+      if (!camId) return;
+      if (!confirm(
+        "Clear all snapshots and clips from this camera detail page?\n\n" +
+        "The main dashboard violation table will not change."
+      )) return;
+      const res = await fetch(API + "/api/camera-policies/cameras", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: camId, clear_camera_detail: true }),
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (_) {}
+      if (!res.ok) {
+        const html404 = res.status === 404 && /<html/i.test(text);
+        alert(data.error || (html404
+          ? "Restart server.py (Ctrl+C), then run: python server.py"
+          : "Could not clear snapshots."));
+        return;
+      }
+      await refreshCamerasFromServer();
+      await renderCameraDetailContent(camId);
+      if (activeView === "all-cameras") {
+        renderLiveGrid();
+        renderCameraTable();
+      }
+      alert("Snapshots cleared from this camera detail page. The main dashboard table is unchanged.");
+    }
+
+    async function hideViolationSnapshot(imageBasename) {
+      if (!currentCameraId || !imageBasename) return;
+      if (!confirm("Hide this snapshot and recorded clip from camera detail?\n\nThey will still appear on the main dashboard until you delete them from Camera Setup.")) return;
+      const res = await fetch(API + "/api/camera-policies/cameras", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: currentCameraId,
+          hide_violation: true,
+          hide_violation_image: imageBasename,
+        }),
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (_) {}
+      if (!res.ok) {
+        const html404 = res.status === 404 && /<html/i.test(text);
+        const msg = data.error || (html404
+          ? "Stop server.py (Ctrl+C) and run python server.py again, then retry."
+          : "Could not hide snapshot.");
+        alert(msg);
+        return;
+      }
+      await refreshCamerasFromServer();
+      await renderCameraDetailContent(currentCameraId);
+      if (activeView === "all-cameras") {
+        renderLiveGrid();
+        renderCameraTable();
+      }
+    }
+
+    function setCameraDetailUrl(camId, replace) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", "camera-detail");
+      url.searchParams.set("camera", camId);
+      const state = { view: "camera-detail", cameraId: camId };
+      if (replace) {
+        history.replaceState(state, "", url);
+      } else {
+        history.pushState(state, "", url);
+      }
+    }
+
+    async function openCameraDetail(camId) {
       const camera = cameras.find(c => String(c.id) === String(camId));
       if (!camera) return;
       currentCameraId = camId;
-      renderCameraDetailContent(camId);
       switchView("camera-detail", true);
+      setCameraDetailUrl(camId, false);
+      const snaps = document.getElementById("cameraSnapshots");
+      const vioWrap = document.getElementById("cameraViolationsWrap");
+      if (snaps) snaps.innerHTML = '<div class="empty">Loading snapshots…</div>';
+      if (vioWrap) vioWrap.innerHTML = '<div class="empty">Loading violations…</div>';
+      try {
+        await Promise.all([refreshCamerasFromServer(), refreshViolationsFromServer()]);
+      } catch (e) {
+        console.error(e);
+      }
+      await renderCameraDetailContent(camId);
     }
 
     function switchView(key, keepMenuSelection) {
@@ -1171,7 +1541,16 @@
         "help-support": "view-help-support",
       };
       activeView = key;
-      if (key !== "camera-detail") currentCameraId = "";
+      if (key !== "camera-detail") {
+        currentCameraId = "";
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("view") === "camera-detail") {
+          url.searchParams.delete("view");
+          url.searchParams.delete("camera");
+          const qs = url.searchParams.toString();
+          history.replaceState(null, "", url.pathname + (qs ? "?" + qs : ""));
+        }
+      }
       const refreshBtn = document.getElementById("refreshBtn");
       document.getElementById("view-dashboard-2").classList.add("hidden");
       document.getElementById("view-all-cameras").classList.add("hidden");
@@ -1208,6 +1587,7 @@
       }
       const user = await res.json();
       const role = (user.role || "viewer").toLowerCase();
+      isAdminUser = role === "admin";
       const locs = user.locations && user.locations.length ? user.locations.join(", ") : (role === "admin" ? "All locations" : "—");
       document.getElementById("whoami").textContent = `Logged in as ${user.username || "User"} (${role}) — ${locs}`;
       return user;
@@ -1234,13 +1614,23 @@
         renderLiveGrid();
         renderCameraTable();
       } else if (activeView === "camera-detail" && currentCameraId) {
-        renderCameraDetailContent(currentCameraId);
+        await renderCameraDetailContent(currentCameraId);
       }
     }
 
     function applyViewFromUrl() {
-      const view = new URLSearchParams(window.location.search).get("view");
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get("view");
       if (!view || view === "dashboard-2") return;
+      if (view === "camera-detail") {
+        const camId = params.get("camera");
+        if (camId) {
+          currentCameraId = camId;
+          switchView("camera-detail", true);
+          void renderCameraDetailContent(camId);
+        }
+        return;
+      }
       const allowed = ["all-cameras", "safety-checks", "help-support"];
       if (!allowed.includes(view)) return;
       switchView(view);
@@ -1250,12 +1640,20 @@
       }
     }
 
+    async function refreshDashboardData() {
+      await loadData();
+    }
+
     async function load() {
       try {
         const user = await loadUser();
         if (!user) return;
         await loadData();
-        applyViewFromUrl();
+        if (activeView !== "camera-detail") {
+          applyViewFromUrl();
+        } else if (currentCameraId) {
+          await renderCameraDetailContent(currentCameraId);
+        }
       } catch (e) {
         console.error(e);
         document.getElementById("liveCameraGrid").innerHTML = '<div class="empty">Could not load camera data.</div>';
@@ -1287,6 +1685,12 @@
     });
 
     document.getElementById("refreshBtn").addEventListener("click", load);
+    document.getElementById("cameraSnapshots").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-hide-image]");
+      if (!btn) return;
+      e.preventDefault();
+      hideViolationSnapshot(btn.getAttribute("data-hide-image"));
+    });
     const chartTypeSelect = document.getElementById("chartTypeSelect");
     if (chartTypeSelect) {
       chartTypeSelect.addEventListener("change", buildViolationChart);
@@ -1304,8 +1708,28 @@
       if (toInput) toInput.value = "";
       applyViolationDateFilter();
     });
+    window.addEventListener("popstate", () => {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get("view");
+      if (view === "camera-detail" && params.get("camera")) {
+        currentCameraId = params.get("camera");
+        switchView("camera-detail", true);
+        void renderCameraDetailContent(currentCameraId);
+        return;
+      }
+      if (!view || view === "dashboard-2") {
+        switchView("dashboard-2");
+        renderViolationDateChips();
+        renderViolationTable();
+        renderDashboardKpis();
+        buildViolationChart();
+        return;
+      }
+      applyViewFromUrl();
+    });
+
     load();
-    setInterval(load, 30000);
+    setInterval(refreshDashboardData, 30000);
   </script>
 </body>
 </html>

@@ -18,7 +18,7 @@ _lock = Lock()
 _metadata_backfill_complete = False
 
 IMAGE_FILENAME_RE = re.compile(
-    r"^violation_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_(\d{3}))?\.jpg$",
+    r"^violation_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(?:_[^/\\]+)*\.jpg$",
     re.IGNORECASE,
 )
 
@@ -561,32 +561,90 @@ def add_violation(
         with _get_connection() as conn:
             _init_db(conn)
             vid = _next_id(conn)
-            conn.execute(
-                """
-                INSERT INTO violations (
-                    id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
-                    person_detected, location, clip, process_category, image_blob, image_mime,
-                    violation_summary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    vid,
-                    datetime_str,
-                    image_basename,
-                    int(bool(no_helmet)),
-                    int(bool(no_vest)),
-                    int(bool(no_glasses)),
-                    int(bool(no_mask)),
-                    int(bool(person_detected)),
-                    (location or "").strip(),
-                    (clip or "").strip(),
-                    normalize_process_category(process_category),
-                    image_blob,
-                    image_mime,
-                    (summary or "").strip(),
-                ),
+            row_vals = (
+                datetime_str,
+                int(bool(no_helmet)),
+                int(bool(no_vest)),
+                int(bool(no_glasses)),
+                int(bool(no_mask)),
+                int(bool(person_detected)),
+                (location or "").strip(),
+                (clip or "").strip(),
+                normalize_process_category(process_category),
+                image_blob,
+                image_mime,
+                (summary or "").strip(),
             )
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO violations (
+                        id, datetime, image, no_helmet, no_vest, no_glasses, no_mask,
+                        person_detected, location, clip, process_category, image_blob, image_mime,
+                        violation_summary
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (vid, datetime_str, image_basename) + row_vals[1:],
+                )
+            except sqlite3.IntegrityError:
+                conn.execute(
+                    """
+                    UPDATE violations
+                    SET datetime = ?, no_helmet = ?, no_vest = ?, no_glasses = ?, no_mask = ?,
+                        person_detected = ?, location = ?, clip = ?, process_category = ?,
+                        image_blob = ?, image_mime = ?, violation_summary = ?
+                    WHERE image = ?
+                    """,
+                    row_vals + (image_basename,),
+                )
             conn.commit()
+
+
+def _unlink_violation_files(image_basename, clip_basename=""):
+    """Remove snapshot and clip files from the violations folder if present."""
+    for name in ((image_basename or "").strip(), (clip_basename or "").strip()):
+        if not name:
+            continue
+        path = os.path.join(VIOLATIONS_DIR, name)
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def list_violation_images_for_location(location_name):
+    """Return image basenames for all violations at a location (fast DB query)."""
+    loc = (location_name or "").strip()
+    if not loc:
+        return []
+    with _lock:
+        _ensure_db()
+        with _get_connection() as conn:
+            rows = conn.execute(
+                "SELECT image FROM violations WHERE location = ?",
+                (loc,),
+            ).fetchall()
+    return [(row["image"] or "").strip() for row in rows if (row["image"] or "").strip()]
+
+
+def delete_violations_for_location(location_name):
+    """Delete all violations (DB rows and files) for a location. Returns count deleted."""
+    loc = (location_name or "").strip()
+    if not loc:
+        return 0
+    with _lock:
+        _ensure_db()
+        with _get_connection() as conn:
+            rows = conn.execute(
+                "SELECT image, clip FROM violations WHERE location = ?",
+                (loc,),
+            ).fetchall()
+            for row in rows:
+                _unlink_violation_files(row["image"], row["clip"])
+            conn.execute("DELETE FROM violations WHERE location = ?", (loc,))
+            conn.commit()
+    return len(rows)
 
 
 def update_violation_clip(image_basename, clip_basename):
